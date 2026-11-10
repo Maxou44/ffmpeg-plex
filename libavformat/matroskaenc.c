@@ -2646,7 +2646,7 @@ static int mkv_write_info(AVFormatContext *s)
     // reserve space for the duration
     mkv->duration = 0;
     mkv->duration_offset = avio_tell(pb);
-    if (!mkv->is_live) {
+    if (!mkv->is_live || 1) { // PLEX: short-circuit) {
         int64_t metadata_duration = get_metadata_duration(s);
 
         if (s->duration > 0) {
@@ -3091,6 +3091,14 @@ static int mkv_write_packet_internal(AVFormatContext *s, const AVPacket *pkt)
     int ret;
     int64_t ts = track->write_dts ? pkt->dts : pkt->pts;
     int64_t relative_packet_pos;
+
+    //PLEX
+    if (ts == AV_NOPTS_VALUE && !mkv->tracks[pkt->stream_index].write_dts) {
+      av_log(s, AV_LOG_WARNING, "Switching to DTS.\n");
+      mkv->tracks[pkt->stream_index].write_dts = 1;
+      ts = pkt->dts;
+    }
+    //PLEX
 
     if (ts == AV_NOPTS_VALUE) {
         av_log(s, AV_LOG_ERROR, "Can't write packet with unknown timestamp\n");
