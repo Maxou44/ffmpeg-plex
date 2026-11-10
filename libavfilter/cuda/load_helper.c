@@ -31,23 +31,60 @@
 
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(avctx, cu, x)
 
+/**
+ * Decompress the embedded PTX if needed. On success *data and *length point
+ * to the usable PTX, and *to_free must be freed by the caller with av_free().
+ */
+static int decompress_data(void *avctx, void **to_free, const void **data, unsigned int *length)
+{
+    *to_free = NULL;
+#if CONFIG_SHADER_COMPRESSION
+    {
+        uint8_t *out;
+        size_t out_len;
+        int ret = ff_zlib_expand(avctx, &out, &out_len, *data, *length);
+        if (ret < 0)
+            return ret;
+        *data = *to_free = out;
+        *length = out_len;
+    }
+#endif
+    return 0;
+}
+
 int ff_cuda_load_module(void *avctx, AVCUDADeviceContext *hwctx, CUmodule *cu_module,
-                        const unsigned char *data, const unsigned int length)
+                        const void *data, unsigned int length)
 {
     CudaFunctions *cu = hwctx->internal->cuda_dl;
+    void *to_free;
+    int ret;
 
-#if CONFIG_SHADER_COMPRESSION
-    uint8_t *out;
-    size_t out_len;
-    int ret = ff_zlib_expand(avctx, &out, &out_len,
-                             data, length);
-    if (ret < 0)
+    if ((ret = decompress_data(avctx, &to_free, &data, &length)) < 0)
         return ret;
 
-    ret = CHECK_CU(cu->cuModuleLoadData(cu_module, out));
-    av_free(out);
+    ret = CHECK_CU(cu->cuModuleLoadData(cu_module, data));
+    av_free(to_free);
+
     return ret;
-#else
-    return CHECK_CU(cu->cuModuleLoadData(cu_module, data));
-#endif
 }
+
+//PLEX
+int ff_cuda_link_add_data(void *avctx, AVCUDADeviceContext *hwctx, CUlinkState link_state,
+                          const void *data, unsigned int length,
+                          const char *name, unsigned int nb_options,
+                          CUjit_option *options, void **option_values)
+{
+    CudaFunctions *cu = hwctx->internal->cuda_dl;
+    void *to_free;
+    int ret;
+
+    if ((ret = decompress_data(avctx, &to_free, &data, &length)) < 0)
+        return ret;
+
+    ret = CHECK_CU(cu->cuLinkAddData(link_state, CU_JIT_INPUT_PTX, (void *)data, length, name,
+                                     nb_options, options, option_values));
+    av_free(to_free);
+
+    return ret;
+}
+//PLEX

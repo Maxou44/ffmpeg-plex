@@ -29,6 +29,7 @@
 #define __device_builtin__ __attribute__((device_builtin))
 #define __align__(N) __attribute__((aligned(N)))
 #define __inline__ __inline__ __attribute__((always_inline))
+#define __constant__ __attribute__((constant))
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -65,6 +66,16 @@ typedef struct __device_builtin__ uint3
 } uint3;
 
 typedef struct uint3 dim3;
+
+typedef struct __device_builtin__ float3
+{
+    float x, y, z;
+} float3;
+
+typedef struct __device_builtin__ ushort3
+{
+    unsigned short x, y, z;
+} ushort3;
 
 typedef struct __device_builtin__ __align__(4) uchar4
 {
@@ -114,6 +125,8 @@ GET(getThreadIdx, tid)
 #define make_uchar2(a, b) ((uchar2){.x = a, .y = b})
 #define make_ushort2(a, b) ((ushort2){.x = a, .y = b})
 #define make_float2(a, b) ((float2){.x = a, .y = b})
+#define make_float3(a, b, c) ((float3){.x = a, .y = b, .z = c})
+#define make_ushort3(a, b, c) ((ushort3){.x = a, .y = b, .z = c})
 #define make_int4(a, b, c, d) ((int4){.x = a, .y = b, .z = c, .w = d})
 #define make_uchar4(a, b, c, d) ((uchar4){.x = a, .y = b, .z = c, .w = d})
 #define make_ushort4(a, b, c, d) ((ushort4){.x = a, .y = b, .z = c, .w = d})
@@ -169,6 +182,43 @@ inline __device__ float2 tex2D<float2>(cudaTextureObject_t texObject, float x, f
 }
 
 // Math helper functions
+
+static __inline__ __device__ float __exp2f(float x)
+{
+    float ret;
+    asm("ex2.approx.f32 %0, %1;" : "=f"(ret) : "f"(x));
+    return ret;
+}
+
+static __inline__ __device__ float __log2f(float x)
+{
+    float ret;
+    asm("lg2.approx.f32 %0, %1;" : "=f"(ret) : "f"(x));
+    return ret;
+}
+
+#define __logf(x) (__log2f((x)) * 0.693147f)
+#define __log10f(x) (__log2f((x) * 0.30103f))
+
+
+static __inline__ __device__ float __sqrtf(float x)
+{
+    float ret;
+    asm("sqrtf.approx.f32 %0, %1;" : "=f"(ret) : "f"(x));
+    return ret;
+}
+
+static __inline__ __device__ float clamp(float val, float min, float max)
+{
+    if (val < min)
+        return min;
+    else if (val > max)
+        return max;
+    else
+        return val;
+}
+
+
 static inline __device__ float floorf(float a) { return __builtin_floorf(a); }
 static inline __device__ float floor(float a) { return __builtin_floorf(a); }
 static inline __device__ double floor(double a) { return __builtin_floor(a); }
