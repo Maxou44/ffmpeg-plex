@@ -24,6 +24,7 @@
  */
 
 #include <string.h>
+#include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "avcodec.h"
 #include "codec_par.h"
@@ -185,6 +186,19 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
         par->height = codec->height;
         break;
     }
+
+    //PLEX
+    par->separate_fields = codec->separate_fields;
+    par->scaling_matrix_present = codec->scaling_matrix_present;
+    par->refs = codec->refs;
+    par->coded_width = codec->coded_width;
+    par->coded_height = codec->coded_height;
+#if FF_API_CODEC_PROPS
+FF_DISABLE_DEPRECATION_WARNINGS
+    par->properties = codec->properties;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+    //PLEX
 
     if (codec->extradata) {
         par->extradata = av_mallocz(codec->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);

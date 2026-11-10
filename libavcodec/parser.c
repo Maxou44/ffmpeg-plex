@@ -184,6 +184,12 @@ int av_parser_parse2(AVCodecParserContext *s, AVCodecContext *avctx,
         FILL(height);
         if (desc && (desc->props & AV_CODEC_PROP_ENHANCEMENT) &&
             s->format >= 0 && avctx->pix_fmt < 0) avctx->pix_fmt = s->format;
+
+//PLEX
+        if (s->picture_structure == AV_PICTURE_STRUCTURE_TOP_FIELD ||
+            s->picture_structure == AV_PICTURE_STRUCTURE_BOTTOM_FIELD)
+            avctx->separate_fields = 1;
+//PLEX
     }
 
     /* update the file pointer */
