@@ -240,7 +240,7 @@ static int qsv_hevc_set_encode_ctrl(AVCodecContext *avctx,
     return 0;
 }
 
-static av_cold int qsv_enc_init(AVCodecContext *avctx)
+static av_cold __attribute__((optnone)) int qsv_enc_init(AVCodecContext *avctx)
 {
     QSVHEVCEncContext *q = avctx->priv_data;
     int ret;

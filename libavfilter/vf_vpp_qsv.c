@@ -402,7 +402,7 @@ static int vpp_set_frame_ext_params(AVFilterContext *ctx, const AVFrame *in, AVF
     fp->num_ext_buf = 0;
 
     if (!in || !out ||
-        !QSV_RUNTIME_VERSION_ATLEAST(qsvvpp->ver, 2, 0))
+        !QSV_RUNTIME_VERSION_ATLEAST(qsvvpp->ver, 1, 255)) // (2, 0)
         return 0;
 
     memset(&invsi_conf, 0, sizeof(mfxExtVideoSignalInfo));
@@ -926,9 +926,8 @@ static const AVOption vpp_options[] = {
       OFFSET(color_primaries_str), AV_OPT_TYPE_STRING, { .str = NULL }, .flags = FLAGS },
     { "out_color_transfer", "Output color transfer characteristics",
       OFFSET(color_transfer_str),  AV_OPT_TYPE_STRING, { .str = NULL }, .flags = FLAGS },
-
     {"tonemap", "Perform tonemapping (0=disable tonemapping, 1=perform tonemapping if the input has HDR metadata)", OFFSET(tonemap), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 1, .flags = FLAGS},
-
+    {"passthrough", "Apply pass through mode if possible.", OFFSET(has_passthrough), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, .flags = FLAGS },
     { NULL }
 };
 
