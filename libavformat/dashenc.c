@@ -168,6 +168,12 @@ typedef struct DASHContext {
     const char *init_seg_name;
     const char *media_seg_name;
     const char *utc_timing_url;
+//PLEX
+    int break_non_keyframes;
+    const char *manifest_file_name;
+    int delete_removed;
+    int skip_to_segment;
+//PLEX
     const char *method;
     const char *user_agent;
     AVDictionary *http_opts;
@@ -367,7 +373,7 @@ static void get_start_index_number(OutputStream *os, DASHContext *c,
     *start_number = 1;
     if (c->window_size) {
         *start_index  = FFMAX(os->nb_segments   - c->window_size, 0);
-        *start_number = FFMAX(os->segment_index - c->window_size, 1);
+        *start_number = FFMAX(os->segment_index - c->window_size, c->skip_to_segment); // PLEX
     }
 }
 
@@ -1005,16 +1011,17 @@ static int write_manifest(AVFormatContext *s, int final)
     AVIOContext *out;
     char temp_filename[1024];
     int ret, i;
-    const char *proto = avio_find_protocol_name(s->url);
+    const char *filename = (c->manifest_file_name && *c->manifest_file_name) ? c->manifest_file_name : s->url; //PLEX
+    const char *proto = avio_find_protocol_name(filename);
     int use_rename = proto && !strcmp(proto, "file");
     static unsigned int warned_non_file = 0;
     AVDictionaryEntry *title = av_dict_get(s->metadata, "title", NULL, 0);
     AVDictionary *opts = NULL;
 
-    if (!use_rename && !warned_non_file++)
+    if (!use_rename && !c->manifest_file_name && !warned_non_file++)
         av_log(s, AV_LOG_ERROR, "Cannot use rename on non file protocol, this may lead to races and temporary partial files\n");
 
-    snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", s->url);
+    snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", filename);
     set_http_options(&opts, c);
     ret = dashenc_io_open(s, &c->mpd_out, temp_filename, &opts);
     av_dict_free(&opts);
@@ -1111,7 +1118,7 @@ static int write_manifest(AVFormatContext *s, int final)
     dashenc_io_close(s, &c->mpd_out, temp_filename);
 
     if (use_rename) {
-        if ((ret = ff_rename(temp_filename, s->url, s)) < 0)
+        if ((ret = ff_rename(temp_filename, filename, s)) < 0)
             return ret;
     }
 
@@ -1430,6 +1437,12 @@ static int dash_init(AVFormatContext *s)
         ctx->avoid_negative_ts = s->avoid_negative_ts;
         ctx->flags = s->flags;
 
+        //PLEX: unset codec_tag when it doesn't match the underlying muxer
+        if (ctx->oformat->codec_tag &&
+            av_codec_get_id(ctx->oformat->codec_tag, st->codecpar->codec_tag) != st->codecpar->codec_id &&
+            av_codec_get_tag(ctx->oformat->codec_tag, st->codecpar->codec_id) != 0)
+            st->codecpar->codec_tag = 0;
+
         os->parser = av_parser_init(st->codecpar->codec_id);
         if (os->parser) {
             os->parser_avctx = avcodec_alloc_context3(NULL);
@@ -1513,6 +1526,10 @@ static int dash_init(AVFormatContext *s)
                 else
                     av_dict_set(&opts, "movflags", "+dash+delay_moov+skip_trailer", AV_DICT_APPEND);
             }
+            //PLEX
+            if (c->skip_to_segment > 1)
+                av_dict_set(&opts, "movflags", "+frag_discont", AV_DICT_APPEND);
+            //PLEX
             if (os->frag_type == FRAG_TYPE_EVERY_FRAME)
                 av_dict_set(&opts, "movflags", "+frag_every_frame", AV_DICT_APPEND);
             else
@@ -1536,6 +1553,11 @@ static int dash_init(AVFormatContext *s)
         avio_flush(ctx->pb);
 
         av_log(s, AV_LOG_VERBOSE, "Representation %d init segment will be written to: %s\n", i, filename);
+
+//PLEX
+        if (c->skip_to_segment > 1)
+            av_opt_set_int(os->ctx, "fragments", c->skip_to_segment, AV_OPT_SEARCH_CHILDREN);
+//PLEX
 
         s->streams[i]->time_base = st->time_base;
         // If the muxer wants to shift timestamps, request to have them shifted
@@ -1582,7 +1604,7 @@ static int dash_init(AVFormatContext *s)
         os->first_pts = AV_NOPTS_VALUE;
         os->max_pts = AV_NOPTS_VALUE;
         os->last_dts = AV_NOPTS_VALUE;
-        os->segment_index = 1;
+        os->segment_index = c->skip_to_segment; //PLEX
 
         if (s->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
             c->nr_of_streams_to_flush++;
@@ -1769,8 +1791,10 @@ static int dashenc_delete_segment_file(AVFormatContext *s, const char* file)
 
 static inline void dashenc_delete_media_segments(AVFormatContext *s, OutputStream *os, int remove_count)
 {
+    DASHContext *c = s->priv_data; //PLEX
     for (int i = 0; i < remove_count; ++i) {
-        dashenc_delete_segment_file(s, os->segments[i]->file);
+        if (c->delete_removed) //PLEX
+            dashenc_delete_segment_file(s, os->segments[i]->file);
 
         // Delete the segment regardless of whether the file was successfully deleted
         av_free(os->segments[i]);
@@ -2012,9 +2036,9 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         as->max_frag_duration = FFMAX(frame_duration, as->max_frag_duration);
     }
 
-    if (c->use_template && !c->use_timeline) {
+    if ((c->use_template && !c->use_timeline) || 1) { //PLEX
         elapsed_duration = pkt->pts - os->first_pts;
-        seg_end_duration = (int64_t) os->segment_index * os->seg_duration;
+        seg_end_duration = (int64_t) (os->segment_index - c->skip_to_segment + 1) * os->seg_duration;
     } else {
         elapsed_duration = pkt->pts - os->start_pts;
         seg_end_duration = os->seg_duration;
@@ -2033,7 +2057,8 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         os->coding_dependency |= os->parser->pict_type != AV_PICTURE_TYPE_I;
     }
 
-    if (pkt->flags & AV_PKT_FLAG_KEY && os->packets_written &&
+    if (((pkt->flags & AV_PKT_FLAG_KEY) || c->break_non_keyframes) && os->packets_written && //PLEX
+        (!c->has_video || st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && //PLEX
         av_compare_ts(elapsed_duration, st->time_base,
                       seg_end_duration, AV_TIME_BASE_Q) >= 0) {
         if (!c->has_video || st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -2275,6 +2300,12 @@ static const AVOption options[] = {
     { "use_template", "Use SegmentTemplate instead of SegmentList", OFFSET(use_template), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, E },
     { "use_timeline", "Use SegmentTimeline in SegmentTemplate", OFFSET(use_timeline), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, E },
     { "utc_timing_url", "URL of the page that will return the UTC timestamp in ISO format", OFFSET(utc_timing_url), AV_OPT_TYPE_STRING, { 0 }, 0, 0, E },
+//PLEX
+    { "manifest_name", "Location to write the manifest (does not affect segments)", OFFSET(manifest_file_name), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, E },
+    { "skip_to_segment", "first segment number to actually write", OFFSET(skip_to_segment), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, INT_MAX, E },
+    { "break_non_keyframes", "allow breaking segments on non-keyframes", OFFSET(break_non_keyframes), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "delete_removed", "delete segments that are removed from the list", OFFSET(delete_removed), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, E },
+//PLEX
     { "window_size", "number of segments kept in the manifest", OFFSET(window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },
     { "write_prft", "Write producer reference time element", OFFSET(write_prft), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, E},
     { NULL },
