@@ -182,6 +182,7 @@ static int set_expr(AVExpr **pexpr, const char *expr, const char *option, void *
  */
 static int formats_match(const enum AVPixelFormat format_main, const enum AVPixelFormat format_overlay) {
     switch(format_main) {
+    case AV_PIX_FMT_NV12:
     case AV_PIX_FMT_P010:
     case AV_PIX_FMT_P016:
         return format_overlay == AV_PIX_FMT_NV12 ||
