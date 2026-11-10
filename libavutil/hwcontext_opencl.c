@@ -2271,6 +2271,7 @@ static int opencl_map_from_qsv(AVHWFramesContext *dst_fc, AVFrame *dst,
     OpenCLDeviceContext *device_priv = dst_fc->device_ctx->hwctx;
     AVOpenCLDeviceContext   *dst_dev = &device_priv->p;
     OpenCLFramesContext *frames_priv = dst_fc->hwctx;
+    const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(src_fc->sw_format);
     AVOpenCLFrameDescriptor *desc;
     VASurfaceID va_surface;
     cl_mem_flags cl_flags;
@@ -2307,11 +2308,12 @@ static int opencl_map_from_qsv(AVHWFramesContext *dst_fc, AVFrame *dst,
     if (!desc)
         return AVERROR(ENOMEM);
 
-    // The cl_intel_va_api_media_sharing extension only supports NV12
-    // surfaces, so for now there are always exactly two planes.
-    desc->nb_planes = 2;
+    desc->nb_planes = av_pix_fmt_count_planes(src_fc->sw_format);
 
     for (p = 0; p < desc->nb_planes; p++) {
+        cl_image_format got_format;
+        int c;
+        int nb_comps = 0;
         desc->planes[p] =
             device_priv->clCreateFromVA_APIMediaSurfaceINTEL(
                 dst_dev->context, cl_flags, &va_surface, p, &cle);
@@ -2319,6 +2321,39 @@ static int opencl_map_from_qsv(AVHWFramesContext *dst_fc, AVFrame *dst,
             av_log(dst_fc, AV_LOG_ERROR, "Failed to create CL "
                    "image from plane %d of QSV/VAAPI surface "
                    "%#x: %d.\n", p, va_surface, cle);
+            err = AVERROR(EIO);
+            goto fail;
+        }
+
+        cle = clGetImageInfo(desc->planes[p], CL_IMAGE_FORMAT, sizeof(got_format),
+                             &got_format, NULL);
+        if (cle != CL_SUCCESS) {
+            av_log(dst_fc, AV_LOG_ERROR, "Failed to get image info: %d.\n", cle);
+            err = AVERROR(EIO);
+            goto fail;
+        }
+
+        for (c = 0; c < pixdesc->nb_components; c++) {
+            int expected_depth;
+            if (pixdesc->comp[c].plane != p)
+                continue;
+            expected_depth = pixdesc->comp[c].depth;
+            if (expected_depth < 8 ||
+                (expected_depth == 8 && got_format.image_channel_data_type != CL_UNORM_INT8) ||
+                (expected_depth > 8 && expected_depth <= 16 && got_format.image_channel_data_type != CL_UNORM_INT16) ||
+                expected_depth > 16) {
+                av_log(dst_fc, AV_LOG_ERROR, "Unexpected data type for %d-bit component: %d.\n",
+                       expected_depth, got_format.image_channel_data_type);
+                err = AVERROR(EIO);
+                goto fail;
+            }
+            nb_comps++;
+        }
+
+        if ((nb_comps == 1 && got_format.image_channel_order != CL_R) ||
+            (nb_comps == 2 && got_format.image_channel_order != CL_RG)) {
+            av_log(dst_fc, AV_LOG_ERROR, "Unexpected channel order for %d-component plane: %d.\n",
+                   nb_comps, got_format.image_channel_order);
             err = AVERROR(EIO);
             goto fail;
         }
