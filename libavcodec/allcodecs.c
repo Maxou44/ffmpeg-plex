@@ -1020,7 +1020,8 @@ static enum AVCodecID remap_deprecated_codec_id(enum AVCodecID id)
 static const AVCodec *find_codec(enum AVCodecID id, int (*x)(const AVCodec *))
 {
     const AVCodec *p, *experimental = NULL;
-    av_unused const AVCodecDescriptor *desc = avcodec_descriptor_get(id);
+    const AVCodec *fallback = NULL; //PLEX
+    const AVCodecDescriptor *desc = avcodec_descriptor_get(id);
     void *i = 0;
 
     id = remap_deprecated_codec_id(id);
@@ -1032,10 +1033,17 @@ static const AVCodec *find_codec(enum AVCodecID id, int (*x)(const AVCodec *))
             av_assert1(!desc || !(desc->props & AV_CODEC_PROP_ENHANCEMENT));
             if (p->capabilities & AV_CODEC_CAP_EXPERIMENTAL && !experimental) {
                 experimental = p;
-            } else
+            } else if (desc && !strcmp(desc->name, p->name)) { //PLEX
                 return p;
+            } else if (!fallback)
+                fallback = p;
         }
     }
+
+    //PLEX
+    if (fallback)
+        return fallback;
+    //PLEX
 
     return experimental;
 }
