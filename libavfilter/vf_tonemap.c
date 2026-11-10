@@ -591,6 +591,16 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
         return AVERROR_BUG;
     }
 
+    /* The output is always NV12: the float path, which tonemaps planar
+     * float RGB in place, would write out of the output frame. */
+    if ((desc->flags & AV_PIX_FMT_FLAG_FLOAT) && link->format != outlink->format) {
+        av_log(ctx, AV_LOG_ERROR, "Float input (%s) is not supported with %s output, "
+               "use P010 input\n",
+               av_get_pix_fmt_name(link->format), av_get_pix_fmt_name(outlink->format));
+        av_frame_free(&in);
+        return AVERROR(EINVAL);
+    }
+
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
         av_frame_free(&in);
