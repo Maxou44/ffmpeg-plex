@@ -3855,6 +3855,17 @@ libxevd_decoder_deps_any="libxevd libxevdb"
 libxeve_encoder_deps_any="libxeve libxeveb"
 libxvid_encoder_deps="libxvid"
 libzvbi_teletext_decoder_deps="libzvbi"
+aac_mf_decoder_deps="mediafoundation"
+ac3_mf_decoder_deps="mediafoundation"
+eac3_mf_decoder_deps="mediafoundation"
+mp1_mf_decoder_deps="mediafoundation"
+mp2_mf_decoder_deps="mediafoundation"
+mp3_mf_decoder_deps="mediafoundation"
+wmav1_mf_decoder_deps="mediafoundation"
+wmav2_mf_decoder_deps="mediafoundation"
+wmalossless_mf_decoder_deps="mediafoundation"
+wmapro_mf_decoder_deps="mediafoundation"
+wmavoice_mf_decoder_deps="mediafoundation"
 vapoursynth_demuxer_deps="vapoursynth"
 videotoolbox_suggest="coreservices"
 videotoolbox_deps="corefoundation coremedia corevideo VTDecompressionSessionDecodeFrame"
@@ -7671,7 +7682,8 @@ test_cpp <<EOF && enable uwp
 #endif
 EOF
 
-mediafoundation_extralibs="-lmfuuid -lole32 -lstrmiids"
+# PLEX: the MediaFoundation decoders link directly against mfplat
+mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -loleaut32 -lstrmiids"
 
 if enabled uwp; then
     # In UWP mode, we can't use LoadLibrary+GetProcAddress to conditionally
@@ -7680,7 +7692,6 @@ if enabled uwp; then
     d3d11va_extralibs="-ldxgi -ld3d11"
     d3d12va_extralibs="-ldxgi -ld3d12"
     vaapi_win32_extralibs="-ldxgi"
-    mediafoundation_extralibs="-lmfplat $mediafoundation_extralibs"
 fi
 
 enabled libdrm &&

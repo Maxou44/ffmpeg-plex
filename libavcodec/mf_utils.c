@@ -514,6 +514,14 @@ const CLSID *ff_codec_to_mf_subtype(enum AVCodecID codec)
     case AV_CODEC_ID_AC3:               return &MFAudioFormat_Dolby_AC3;
     case AV_CODEC_ID_AAC:               return &MFAudioFormat_AAC;
     case AV_CODEC_ID_MP3:               return &MFAudioFormat_MP3;
+    case AV_CODEC_ID_EAC3:              return &MFAudioFormat_Dolby_DDPlus;
+    case AV_CODEC_ID_MP1:               return &MFAudioFormat_MPEG;
+    case AV_CODEC_ID_MP2:               return &MFAudioFormat_MPEG;
+    case AV_CODEC_ID_WMAVOICE:          return &MFAudioFormat_MSP1;
+    case AV_CODEC_ID_WMAV1:             return &ff_MFAudioFormat_MSAUDIO1;
+    case AV_CODEC_ID_WMAV2:             return &MFAudioFormat_WMAudioV8;
+    case AV_CODEC_ID_WMAPRO:            return &MFAudioFormat_WMAudioV9;
+    case AV_CODEC_ID_WMALOSSLESS:       return &MFAudioFormat_WMAudio_Lossless;
     default:                            return NULL;
     }
 }

@@ -364,6 +364,7 @@ OBJS-$(CONFIG_DXV_DECODER)             += dxv.o
 OBJS-$(CONFIG_DXV_ENCODER)             += dxvenc.o hashtable.o
 OBJS-$(CONFIG_EAC3_DECODER)            += eac3_data.o
 OBJS-$(CONFIG_EAC3_ENCODER)            += eac3enc.o eac3_data.o
+OBJS-$(CONFIG_EAC3_MF_DECODER)         += mf.o mf_utils.o mpeg4audio.o
 OBJS-$(CONFIG_EACMV_DECODER)           += eacmv.o
 OBJS-$(CONFIG_EAE)                     += eae.o
 OBJS-$(CONFIG_EAMAD_DECODER)           += eamad.o eaidct.o mpeg12.o \

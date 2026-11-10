@@ -77,6 +77,14 @@ HRESULT ff_MFSetAttributeSize(IMFAttributes *pattr, REFGUID guid,
 #define ff_MFSetAttributeRatio ff_MFSetAttributeSize
 #define ff_MFGetAttributeRatio ff_MFGetAttributeSize
 
+//PLEX
+// WMA1. Apparently there is no official GUID symbol for this.
+DEFINE_GUID(ff_MFAudioFormat_MSAUDIO1, 0x00000160, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71);
+
+// MP42 FourCC. I made up the symbol name.
+DEFINE_GUID(ff_MFVideoFormat_MP42, 0x3234504D, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71);
+//PLEX
+
 // These do exist in mingw-w64's codecapi.h, but they aren't properly defined
 // by the header until after mingw-w64 v7.0.0.
 DEFINE_GUID(ff_CODECAPI_AVDecVideoThumbnailGenerationMode, 0x2efd8eee,0x1150,0x4328,0x9c,0xf5,0x66,0xdc,0xe9,0x33,0xfc,0xf4);
@@ -122,6 +130,7 @@ DEFINE_MEDIATYPE_GUID(ff_MFVideoFormat_HEVC, 0x43564548); // FCC('HEVC')
 DEFINE_MEDIATYPE_GUID(ff_MFVideoFormat_HEVC_ES, 0x53564548); // FCC('HEVS')
 DEFINE_MEDIATYPE_GUID(ff_MFVideoFormat_AV1, 0x31305641); // FCC('AV01')
 
+DEFINE_GUID(ff_GUID_NULL,                0x00000000, 0x0000,0x0000,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00);
 
 // This enum is missing from mingw-w64's codecapi.h by v7.0.0.
 enum ff_eAVEncCommonRateControlMode {

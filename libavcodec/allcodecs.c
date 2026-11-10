@@ -761,6 +761,12 @@ extern const FFCodec ff_xsub_decoder;
 
 /* external libraries */
 //PLEX
+extern const FFCodec ff_eac3_mf_decoder;
+extern const FFCodec ff_wmalossless_mf_decoder;
+extern const FFCodec ff_wmapro_mf_decoder;
+extern const FFCodec ff_wmav1_mf_decoder;
+extern const FFCodec ff_wmav2_mf_decoder;
+extern const FFCodec ff_wmavoice_mf_decoder;
 extern const FFCodec ff_eac3_eae_encoder;
 extern const FFCodec ff_eac3_eae_decoder;
 extern const FFCodec ff_truehd_eae_decoder;
