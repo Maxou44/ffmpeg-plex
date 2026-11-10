@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
 #include <mbedtls/version.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
@@ -379,10 +380,11 @@ static int mbedtls_send(void *ctx, const unsigned char *buf, size_t len)
 static int mbedtls_recv(void *ctx, unsigned char *buf, size_t len)
 {
     TLSContext *tls_ctx = (TLSContext*) ctx;
-    TLSShared *shr = &tls_ctx->tls_shared;
+    av_unused TLSShared *shr = &tls_ctx->tls_shared;
     URLContext *h = shr->is_dtls ? shr->udp : shr->tcp;
     int ret = ffurl_read(h, buf, len);
     if (ret >= 0) {
+#if CONFIG_UDP_PROTOCOL /* DTLS needs the udp protocol */
         if (shr->is_dtls && shr->listen && !tls_ctx->dest_addr_len) {
             int err_ret;
 
@@ -394,6 +396,7 @@ static int mbedtls_recv(void *ctx, unsigned char *buf, size_t len)
             }
             av_log(tls_ctx, AV_LOG_TRACE, "Set UDP remote addr on UDP socket, now 'connected'\n");
         }
+#endif
         return ret;
     }
     if (h->max_packet_size && len > h->max_packet_size)
