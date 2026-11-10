@@ -208,7 +208,7 @@ int ff_vaapi_vpp_config_output(AVFilterLink *outlink)
     else
         output_frames->initial_pool_size = 4;
 
-    err = ff_filter_init_hw_frames(avctx, outlink, 10);
+    err = ff_filter_init_hw_frames(avctx, outlink, 24);
     if (err < 0)
         goto fail;
 
