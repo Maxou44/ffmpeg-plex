@@ -177,7 +177,11 @@ static int mux_fixup_ts(Muxer *mux, MuxStream *ms, AVPacket *pkt)
         if ((ost->type == AVMEDIA_TYPE_AUDIO || ost->type == AVMEDIA_TYPE_VIDEO || ost->type == AVMEDIA_TYPE_SUBTITLE) &&
             pkt->dts != AV_NOPTS_VALUE &&
             ms->last_mux_dts != AV_NOPTS_VALUE) {
-            int64_t max = ms->last_mux_dts + !(mux->fc->oformat->flags & AVFMT_TS_NONSTRICT);
+            int strict_ts = ms->strict_ts;
+            int64_t max;
+            if (strict_ts == -1)
+                strict_ts = !(mux->fc->oformat->flags & AVFMT_TS_NONSTRICT);
+            max = ms->last_mux_dts + strict_ts;
             if (pkt->dts < max) {
                 int loglevel = max - pkt->dts > 2 || ost->type == AVMEDIA_TYPE_VIDEO ? AV_LOG_WARNING : AV_LOG_DEBUG;
                 if (exit_on_error)

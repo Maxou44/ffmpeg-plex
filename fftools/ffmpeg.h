@@ -229,6 +229,7 @@ typedef struct OptionsContext {
     SpecifierOptList presets;
     SpecifierOptList copy_initial_nonkeyframes;
     SpecifierOptList copy_prior_start;
+    SpecifierOptList strict_ts;
     SpecifierOptList filters;
 #if FFMPEG_OPT_FILTER_SCRIPT
     SpecifierOptList filter_scripts;

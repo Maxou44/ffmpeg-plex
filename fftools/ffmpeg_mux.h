@@ -80,6 +80,7 @@ typedef struct MuxStream {
 
     int             copy_initial_nonkeyframes;
     int             copy_prior_start;
+    int             strict_ts;
     int             streamcopy_started;
 #if FFMPEG_OPT_VSYNC_DROP
     int             ts_drop;

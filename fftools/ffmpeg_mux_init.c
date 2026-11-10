@@ -1495,6 +1495,9 @@ static int ost_add(Muxer *mux, const OptionsContext *o, enum AVMediaType type,
 
     ms->copy_prior_start = -1;
     opt_match_per_stream_int(ost, &o->copy_prior_start, oc, st, &ms->copy_prior_start);
+
+    ms->strict_ts = -1;
+    opt_match_per_stream_int(ost, &o->strict_ts, oc, st, &ms->strict_ts);
     opt_match_per_stream_str(ost, &o->bitstream_filters, oc, st, &bsfs);
     if (bsfs && *bsfs) {
         ret = av_bsf_list_parse_str(bsfs, &ms->bsf_ctx);
