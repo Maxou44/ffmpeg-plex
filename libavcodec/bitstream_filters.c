@@ -34,6 +34,9 @@ extern const FFBitStreamFilter ff_chomp_bsf;
 extern const FFBitStreamFilter ff_dump_extradata_bsf;
 extern const FFBitStreamFilter ff_dca_core_bsf;
 extern const FFBitStreamFilter ff_dovi_rpu_bsf;
+//PLEX
+extern const FFBitStreamFilter ff_framedrop_bsf;
+//PLEX
 extern const FFBitStreamFilter ff_dts2pts_bsf;
 extern const FFBitStreamFilter ff_dv_error_marker_bsf;
 extern const FFBitStreamFilter ff_eac3_core_bsf;

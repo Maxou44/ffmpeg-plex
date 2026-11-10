@@ -9,6 +9,7 @@ OBJS-$(CONFIG_AV1_FRAME_SPLIT_BSF)        += bsf/av1_frame_split.o
 OBJS-$(CONFIG_AV1_METADATA_BSF)           += bsf/av1_metadata.o
 OBJS-$(CONFIG_CHOMP_BSF)                  += bsf/chomp.o
 OBJS-$(CONFIG_DCA_CORE_BSF)               += bsf/dca_core.o
+OBJS-$(CONFIG_FRAMEDROP_BSF)              += bsf/framedrop.o
 OBJS-$(CONFIG_DTS2PTS_BSF)                += bsf/dts2pts.o
 OBJS-$(CONFIG_DUMP_EXTRADATA_BSF)         += bsf/dump_extradata.o
 OBJS-$(CONFIG_DV_ERROR_MARKER_BSF)        += bsf/dv_error_marker.o
