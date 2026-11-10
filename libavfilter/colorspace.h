@@ -38,4 +38,9 @@ void ff_fill_rgb2yuv_table(const AVLumaCoefficients *coeffs,
 double ff_determine_signal_peak(AVFrame *in);
 void ff_update_hdr_metadata(AVFrame *in, double peak);
 
+int ff_get_range_off(int *off, int *y_rng, int *uv_rng,
+                     enum AVColorRange rng, int depth);
+void ff_get_yuv_coeffs(int16_t out[3][3][8], double (*table)[3],
+                       int depth, int y_rng, int uv_rng, int yuv2rgb);
+
 #endif
