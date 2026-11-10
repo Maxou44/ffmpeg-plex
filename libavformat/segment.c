@@ -54,6 +54,7 @@ typedef struct SegmentListEntry {
     char *filename;
     struct SegmentListEntry *next;
     int64_t last_duration;
+    double end_audio_time, end_video_time; // PLEX
 } SegmentListEntry;
 
 typedef enum {
@@ -128,6 +129,10 @@ typedef struct SegmentContext {
     SegmentListEntry cur_entry;
     SegmentListEntry *segment_list_entries;
     SegmentListEntry *segment_list_entries_end;
+    
+    int list_separate_times;    ///< PLEX
+    int list_unfinished;     ///< PLEX
+    int cur_list_size; ///< PLEX
 } SegmentContext;
 
 static void print_csv_escaped_str(AVIOContext *ctx, const char *str)
@@ -320,6 +325,8 @@ static int segment_list_open(AVFormatContext *s)
 
 static void segment_list_print_entry(AVIOContext      *list_ioctx,
                                      ListType          list_type,
+                                     int               list_separate_times, //PLEX
+                                     int               unfinished,          //PLEX
                                      const SegmentListEntry *list_entry,
                                      void *log_ctx)
 {
@@ -329,9 +336,16 @@ static void segment_list_print_entry(AVIOContext      *list_ioctx,
         break;
     case LIST_TYPE_CSV:
     case LIST_TYPE_EXT:
+//PLEX
+        if (unfinished)
+            avio_printf(list_ioctx, "#");
         print_csv_escaped_str(list_ioctx, list_entry->filename);
-        avio_printf(list_ioctx, ",%f,%f\n", list_entry->start_time, list_entry->end_time);
+        if (list_separate_times)
+            avio_printf(list_ioctx, ",%f,%f,%f,%f\n", list_entry->start_time, list_entry->end_time, list_entry->end_audio_time, list_entry->end_video_time);
+        else
+            avio_printf(list_ioctx, ",%f,%f\n", list_entry->start_time, list_entry->end_time);
         break;
+//PLEX
     case LIST_TYPE_M3U8:
         avio_printf(list_ioctx, "#EXTINF:%f,\n%s\n",
                     list_entry->end_time - list_entry->start_time, list_entry->filename);
@@ -353,6 +367,65 @@ static void segment_list_print_entry(AVIOContext      *list_ioctx,
     }
 }
 
+// PLEX
+static int segment_write_list(AVFormatContext *s, int complete, int is_last)
+{
+    SegmentContext *seg = s->priv_data;
+    if (seg->list) {
+        if (seg->list_size || seg->list_type == LIST_TYPE_M3U8) {
+            int ret;
+            SegmentListEntry *entry = av_mallocz(sizeof(*entry));
+
+            // If this is the first time calling write_list (such as in an
+            // empty segment) we need to allocate an entry to write,
+            // otherwise use the previously uncompleted entry.
+            //
+            if (complete && seg->list_unfinished && seg->segment_list_entries) {
+                entry = seg->segment_list_entries_end;
+                av_free(entry->filename);
+            } else {
+                entry = av_mallocz(sizeof(*entry));
+                if (!entry)
+                    return AVERROR(ENOMEM);
+                seg->cur_list_size++;
+            }
+
+            /* append new element */
+            memcpy(entry, &seg->cur_entry, sizeof(*entry));
+            entry->filename = av_strdup(entry->filename);
+            if (!seg->segment_list_entries)
+                seg->segment_list_entries = seg->segment_list_entries_end = entry;
+            else if (entry != seg->segment_list_entries_end)
+                seg->segment_list_entries_end->next = entry;
+            seg->segment_list_entries_end = entry;
+
+            /* drop first item */
+            if (seg->list_size && seg->cur_list_size >= seg->list_size) { //PLEX
+                entry = seg->segment_list_entries;
+                seg->segment_list_entries = seg->segment_list_entries->next;
+                av_freep(&entry->filename);
+                av_freep(&entry);
+                seg->cur_list_size--; //PLEX
+            }
+
+            if ((ret = segment_list_open(s)) < 0)
+                return ret;
+            for (entry = seg->segment_list_entries; entry; entry = entry->next)
+                segment_list_print_entry(seg->list_pb, seg->list_type, seg->list_separate_times, !complete && !entry->next, entry, s); // PLEX
+            if (seg->list_type == LIST_TYPE_M3U8 && is_last)
+                avio_printf(seg->list_pb, "#EXT-X-ENDLIST\n");
+            ff_format_io_close(s, &seg->list_pb);
+            if (seg->use_rename)
+                ff_rename(seg->temp_list_filename, seg->list, s);
+        } else {
+            segment_list_print_entry(seg->list_pb, seg->list_type, seg->list_separate_times, !complete, &seg->cur_entry, s); // PLEX
+            avio_flush(seg->list_pb);
+        }
+    }
+    return 0;
+}
+//PLEX
+
 static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
 {
     SegmentContext *seg = s->priv_data;
@@ -371,50 +444,18 @@ static int segment_end(AVFormatContext *s, int write_trailer, int is_last)
     av_write_frame(oc, NULL); /* Flush any buffered data (fragmented mp4) */
     if (write_trailer)
         ret = av_write_trailer(oc);
+    
+    // PLEX
+    // make sure everything is written to the file system before we mark the file as done
+    avio_flush(oc->pb);
+    //PLEX
 
     if (ret < 0)
         av_log(s, AV_LOG_ERROR, "Failure occurred when ending segment '%s'\n",
                oc->url);
-
-    if (seg->list) {
-        if (seg->list_size || seg->list_type == LIST_TYPE_M3U8) {
-            SegmentListEntry *entry = av_mallocz(sizeof(*entry));
-            if (!entry) {
-                ret = AVERROR(ENOMEM);
-                goto end;
-            }
-
-            /* append new element */
-            memcpy(entry, &seg->cur_entry, sizeof(*entry));
-            entry->filename = av_strdup(entry->filename);
-            if (!seg->segment_list_entries)
-                seg->segment_list_entries = seg->segment_list_entries_end = entry;
-            else
-                seg->segment_list_entries_end->next = entry;
-            seg->segment_list_entries_end = entry;
-
-            /* drop first item */
-            if (seg->list_size && seg->segment_count >= seg->list_size) {
-                entry = seg->segment_list_entries;
-                seg->segment_list_entries = seg->segment_list_entries->next;
-                av_freep(&entry->filename);
-                av_freep(&entry);
-            }
-
-            if ((ret = segment_list_open(s)) < 0)
-                goto end;
-            for (entry = seg->segment_list_entries; entry; entry = entry->next)
-                segment_list_print_entry(seg->list_pb, seg->list_type, entry, s);
-            if (seg->list_type == LIST_TYPE_M3U8 && is_last)
-                avio_printf(seg->list_pb, "#EXT-X-ENDLIST\n");
-            ff_format_io_close(s, &seg->list_pb);
-            if (seg->use_rename)
-                ff_rename(seg->temp_list_filename, seg->list, s);
-        } else {
-            segment_list_print_entry(seg->list_pb, seg->list_type, &seg->cur_entry, s);
-            avio_flush(seg->list_pb);
-        }
-    }
+               
+    if ((ret = segment_write_list(s, 1, is_last)) < 0)
+        goto end;
 
     av_log(s, AV_LOG_VERBOSE, "segment:'%s' count:%d ended\n",
            seg->avf->url, seg->segment_count);
@@ -926,6 +967,20 @@ calc_times:
             av_ts2timestr(pkt->duration, &st->time_base),
             pkt->flags & AV_PKT_FLAG_KEY,
             pkt->stream_index == seg->reference_stream_index ? seg->frame_count : -1);
+            
+//PLEX
+    if (pkt->stream_index == seg->reference_stream_index && seg->list_unfinished &&
+        !seg->frame_count) {
+        seg->cur_entry.index = seg->segment_idx;
+        seg->cur_entry.start_time = (double)pkt->pts * av_q2d(st->time_base);
+        seg->cur_entry.start_pts = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
+        seg->cur_entry.end_time = seg->cur_entry.start_time;
+        seg->cur_entry.end_audio_time = seg->cur_entry.end_time;
+        seg->cur_entry.end_video_time = seg->cur_entry.end_time;
+        if ((ret = segment_write_list(s, 0, 0)) < 0)
+            goto fail;
+    }
+//PLEX
 
     if (seg->reference_stream_first_pts == AV_NOPTS_VALUE &&
         pkt->stream_index == seg->reference_stream_index &&
@@ -964,7 +1019,15 @@ calc_times:
         seg->cur_entry.index = seg->segment_idx + seg->segment_idx_wrap * seg->segment_idx_wrap_nb;
         seg->cur_entry.start_time = (double)pkt->pts * av_q2d(st->time_base);
         seg->cur_entry.start_pts = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
-        seg->cur_entry.end_time = seg->cur_entry.start_time;
+        seg->cur_entry.end_time = seg->cur_entry.start_time;  
+//PLEX
+        seg->cur_entry.end_audio_time = seg->cur_entry.end_time;
+        seg->cur_entry.end_video_time = seg->cur_entry.end_time;
+
+        if (seg->list_unfinished)
+            if ((ret = segment_write_list(s, 0, 0)) < 0)
+                goto fail;
+//PLEX
 
         if (seg->times || (!seg->frames && !seg->use_clocktime) && seg->write_empty)
             goto calc_times;
@@ -1000,6 +1063,19 @@ calc_times:
     av_log(s, AV_LOG_DEBUG, " -> pts:%s pts_time:%s dts:%s dts_time:%s\n",
            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
+           
+//PLEX
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO || st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+    {
+        enum AVMediaType codec_type = st->codecpar->codec_type;
+        double end_time = (double)(pkt->pts + pkt->duration) * av_q2d(st->time_base);
+
+        if (codec_type == AVMEDIA_TYPE_AUDIO)
+            seg->cur_entry.end_audio_time = FFMAX(seg->cur_entry.end_audio_time, end_time);
+        else if (codec_type == AVMEDIA_TYPE_VIDEO)
+            seg->cur_entry.end_video_time = FFMAX(seg->cur_entry.end_video_time, end_time);
+    }
+//PLEX
 
     ret = ff_write_chained(seg->avf, pkt->stream_index, pkt, s,
                            seg->initial_offset || seg->reset_timestamps ||
@@ -1101,6 +1177,10 @@ static const AVOption options[] = {
     { "reset_timestamps", "reset timestamps at the beginning of each segment", OFFSET(reset_timestamps), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "initial_offset", "set initial timestamp offset", OFFSET(initial_offset), AV_OPT_TYPE_DURATION, {.i64 = 0}, -INT64_MAX, INT64_MAX, E },
     { "write_empty_segments", "allow writing empty 'filler' segments", OFFSET(write_empty), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+//PLEX
+    { "segment_list_separate_stream_times", "adds additional fields in segment list for separate audio and video end times",   OFFSET(list_separate_times),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
+    { "segment_list_unfinished", "lists unfinished segments with a leading #",   OFFSET(list_unfinished),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
+//PLEX
     { NULL },
 };
 
