@@ -68,6 +68,15 @@ static const enum AVPixelFormat supported_formats[] = {
 
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(device_ctx, cu, x)
 
+#if defined(NVDECAPI_MAJOR_VERSION) && defined(NVDECAPI_MINOR_VERSION)
+# define NVDECAPI_CHECK_VERSION(major, minor) \
+    ((major) < NVDECAPI_MAJOR_VERSION || ((major) == NVDECAPI_MAJOR_VERSION && (minor) <= NVDECAPI_MINOR_VERSION))
+#else
+/* version macros were added in SDK 8.1 ffnvcodec */
+# define NVDECAPI_CHECK_VERSION(major, minor) \
+    ((major) < 8 || ((major) == 8 && (minor) <= 0))
+#endif
+
 static int cuda_frames_get_constraints(AVHWDeviceContext *ctx,
                                        const void *hwconfig,
                                        AVHWFramesConstraints *constraints)
@@ -372,11 +381,13 @@ static int cuda_context_init(AVHWDeviceContext *device_ctx, int flags) {
                                                     hwctx->internal->cuda_device));
         if (ret < 0)
             return ret;
+#if NVDECAPI_CHECK_VERSION(12, 0)
     } else if (flags & AV_CUDA_USE_CURRENT_CONTEXT) {
         ret = CHECK_CU(cu->cuCtxGetCurrent(&hwctx->cuda_ctx));
         if (ret < 0)
             return ret;
         av_log(device_ctx, AV_LOG_INFO, "Using current CUDA context.\n");
+#endif
     } else {
         ret = CHECK_CU(cu->cuCtxCreate(&hwctx->cuda_ctx, desired_flags,
                                        hwctx->internal->cuda_device));
@@ -398,8 +409,9 @@ static int cuda_flags_from_opts(AVHWDeviceContext *device_ctx,
                                 AVDictionary *opts, int *flags)
 {
     AVDictionaryEntry *primary_ctx_opt = av_dict_get(opts, "primary_ctx", NULL, 0);
+    
     AVDictionaryEntry *current_ctx_opt = av_dict_get(opts, "current_ctx", NULL, 0);
-
+#if NVDECAPI_CHECK_VERSION(12, 0)
     int use_primary_ctx = 0, use_current_ctx = 0;
     if (primary_ctx_opt)
         use_primary_ctx = strtol(primary_ctx_opt->value, NULL, 10);
@@ -413,13 +425,16 @@ static int cuda_flags_from_opts(AVHWDeviceContext *device_ctx,
     }
 
     if (primary_ctx_opt && use_primary_ctx) {
+#else
+    if (primary_ctx_opt && strtol(primary_ctx_opt->value, NULL, 10)) {
+#endif
         av_log(device_ctx, AV_LOG_VERBOSE, "Using CUDA primary device context\n");
         *flags |= AV_CUDA_USE_PRIMARY_CONTEXT;
     } else if (primary_ctx_opt) {
         av_log(device_ctx, AV_LOG_VERBOSE, "Disabling use of CUDA primary device context\n");
         *flags &= ~AV_CUDA_USE_PRIMARY_CONTEXT;
     }
-
+#if NVDECAPI_CHECK_VERSION(12, 0)
     if (current_ctx_opt && use_current_ctx) {
         av_log(device_ctx, AV_LOG_VERBOSE, "Using CUDA current device context\n");
         *flags |= AV_CUDA_USE_CURRENT_CONTEXT;
@@ -427,6 +442,7 @@ static int cuda_flags_from_opts(AVHWDeviceContext *device_ctx,
         av_log(device_ctx, AV_LOG_VERBOSE, "Disabling use of CUDA current device context\n");
         *flags &= ~AV_CUDA_USE_CURRENT_CONTEXT;
     }
+#endif
 
     return 0;
 }
