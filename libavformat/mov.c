@@ -579,10 +579,10 @@ retry:
             str[str_size] = 0;
         }
         c->fc->event_flags |= AVFMT_EVENT_FLAG_METADATA_UPDATED;
-        av_dict_set(metadata, key, str, 0);
+        av_dict_set(metadata, key, str, AV_DICT_MULTIKEY | AV_DICT_DEDUP);
         if (*language && strcmp(language, "und")) {
             snprintf(key2, sizeof(key2), "%s-%s", key, language);
-            av_dict_set(metadata, key2, str, 0);
+            av_dict_set(metadata, key2, str, AV_DICT_MULTIKEY | AV_DICT_DEDUP);
         }
         if (!strcmp(key, "encoder")) {
             int major, minor, micro;
