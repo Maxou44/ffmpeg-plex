@@ -22,6 +22,7 @@
 #include "libavutil/bprint.h"
 #include "libavutil/crc.h"
 #include "libavutil/dict.h"
+#include "libavutil/file_open.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
@@ -32,6 +33,14 @@
 #include "avio_internal.h"
 #include "internal.h"
 #include <stdarg.h>
+#include "config.h"
+#include <fcntl.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_IO_H
+#include <io.h>
+#endif
 
 #define IO_BUFFER_SIZE 32768
 
@@ -79,6 +88,7 @@ void ffio_init_context(FFIOContext *ctx,
     s->seekable        = seek ? AVIO_SEEKABLE_NORMAL : 0;
     s->min_packet_size = 0;
     s->max_packet_size = 0;
+    s->trace_fd = -1; //PLEX
     s->update_checksum = NULL;
     ctx->short_seek_threshold = SHORT_SEEK_THRESHOLD;
 
@@ -505,6 +515,14 @@ static int read_packet_wrapper(AVIOContext *s, uint8_t *buf, int size)
     if (!s->read_packet)
         return AVERROR(EINVAL);
     ret = s->read_packet(s->opaque, buf, size);
+    //PLEX
+    if (s->trace_file && ret > 0) {
+        if (s->trace_fd < 0)
+            s->trace_fd = avpriv_open(s->trace_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (s->trace_fd >= 0 && write(s->trace_fd, buf, ret) != ret)
+            av_log(s, AV_LOG_WARNING, "Could not write to trace file %s\n", s->trace_file);
+    }
+    //PLEX
     av_assert2(ret || s->max_packet_size);
     return ret;
 }

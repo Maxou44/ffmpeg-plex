@@ -19,6 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
+#include <fcntl.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_IO_H
+#include <io.h>
+#endif
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "libavutil/mem.h"
@@ -92,6 +100,7 @@ static const AVClass *child_class_iterate(void **iter)
 #define D AV_OPT_FLAG_DECODING_PARAM
 static const AVOption avio_options[] = {
     {"protocol_whitelist", "List of protocols that are allowed to be used", AVIOOFFSET(protocol_whitelist), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, D },
+    {"trace_file", "Append all data read or written to this file", AVIOOFFSET(trace_file), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, D }, //PLEX
     { NULL },
 };
 
@@ -626,6 +635,13 @@ int avio_close(AVIOContext *s)
     avio_flush(s);
     h         = s->opaque;
     s->opaque = NULL;
+
+    //PLEX
+    if (s->trace_fd >= 0) {
+        close(s->trace_fd);
+        s->trace_fd = -1;
+    }
+    //PLEX
 
     av_freep(&s->buffer);
     if (s->write_flag)
