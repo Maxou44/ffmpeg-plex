@@ -11,7 +11,7 @@ configuration du Plex Transcoder (Plex Media Server 1.43.5.11029,
 | `windows-x86_64` | `ubuntu-24.04`         | compilation croisée llvm-mingw (comme Plex) |
 | `macos-arm64`    | `macos-15`             | clang Xcode, macOS 11.0 minimum           |
 | `macos-x86_64`   | `macos-15-intel`       | clang Xcode, macOS 10.13 minimum          |
-| `macos-universal`| `macos-15`             | `lipo` des deux binaires macOS            |
+| `macos-universal`| `macos-15`             | `lipo` des deux binaires macOS, dans le job `release` |
 
 Workflow : `.github/workflows/build-ffmpeg.yml`. Il se déclenche sur chaque push
 de branche, les pull requests et manuellement (`workflow_dispatch`). Chaque

@@ -143,30 +143,14 @@ jobs:
           name: ffmpeg-${{ matrix.target }}-debug
           path: dist/${{ matrix.target }}/debug
 
-  macos-universal:
-    name: macos-universal
-    needs: macos
-    runs-on: macos-15
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: ffmpeg-macos-*
-          path: in
-      - name: lipo
-        run: |
-          mkdir -p out
-          lipo -create in/ffmpeg-macos-arm64/ffmpeg in/ffmpeg-macos-x86_64/ffmpeg -output out/ffmpeg
-          lipo -info out/ffmpeg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-macos-universal
-          path: out/ffmpeg
-
+  # Runs on macOS for lipo, which creates the universal macOS binary. (A
+  # separate macos-universal job made GitHub draw the linux matrix as one of
+  # its dependencies.)
   release:
     name: release
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
-    needs: [linux, macos-universal]
-    runs-on: ubuntu-24.04
+    needs: [linux, macos]
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
@@ -178,12 +162,19 @@ jobs:
         with:
           pattern: ffmpeg-*
           path: in
+      - name: Universal macOS binary
+        run: |
+          mkdir -p in/ffmpeg-macos-universal
+          lipo -create in/ffmpeg-macos-arm64/ffmpeg in/ffmpeg-macos-x86_64/ffmpeg \
+               -output in/ffmpeg-macos-universal/ffmpeg
+          lipo -info in/ffmpeg-macos-universal/ffmpeg
       - name: Package
         run: |
           mkdir out
           for d in in/ffmpeg-*; do
             n=$(basename "$d")
             case $n in *-debug) continue ;; esac
+            chmod +x "$d"/ffmpeg* 2>/dev/null || true
             tar -C "$d" -cJf "out/$n.tar.xz" .
           done
           ls -la out
@@ -191,5 +182,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v$(cat RELEASE)-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA" --title "ffmpeg $tag" --latest             --notes "Static ffmpeg $(cat RELEASE) built with the Plex Transcoder configuration from ${GITHUB_SHA::10}. Binaries for Linux (x86_64, arm64), Windows x86_64 and macOS (universal, arm64, x86_64)."
+          ver=$(cat RELEASE)
+          tag="v$ver-$GITHUB_RUN_NUMBER"
+          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" \
+             --target "$GITHUB_SHA" --title "ffmpeg $tag" --latest \
+             --notes "Static ffmpeg $ver built with the Plex Transcoder configuration from ${GITHUB_SHA:0:10}. Binaries for Linux (x86_64, arm64), Windows x86_64 and macOS (universal, arm64, x86_64)."
