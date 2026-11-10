@@ -603,6 +603,10 @@ extern const FFFilter ff_vsrc_zoneplate;
 
 extern const FFFilter ff_vsink_nullsink;
 
+//PLEX
+extern const FFFilter ff_vf_inlineass;
+//^PLEX
+
 /* multimedia filters */
 extern const FFFilter ff_avf_a3dscope;
 extern const FFFilter ff_avf_abitscope;
