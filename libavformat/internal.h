@@ -118,6 +118,13 @@ typedef struct FFFormatContext {
     AVDictionary *id3v2_meta;
 
     int missing_streams;
+
+    //PLEX
+    /**
+     * Whether or not a header has already been written
+     */
+    int header_written;
+    //PLEX
 } FFFormatContext;
 
 static av_always_inline FFFormatContext *ffformatcontext(AVFormatContext *s)
