@@ -1,0 +1,188 @@
+name: Build ffmpeg
+
+# Builds a single static ffmpeg binary per platform with the configuration of
+# the Plex Transcoder, see ci/.
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ffmpeg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          # cross-compiled from Linux with llvm-mingw, like Plex
+          - target: windows-x86_64
+            runner: ubuntu-24.04
+            setup: windows
+    runs-on: ${{ matrix.runner }}
+    # glibc 2.35: the binaries run on Ubuntu 22.04 / Debian 12 and newer
+    container: ubuntu:22.04
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y -qq git ca-certificates > /dev/null
+
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: ci/setup-linux.sh ${{ matrix.setup }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps/${{ matrix.target }}
+            .deps-src
+          key: deps-${{ matrix.target }}-${{ hashFiles('ci/deps.sh', 'ci/build.sh', 'ci/setup-linux.sh') }}
+
+      - name: Build
+        run: ci/build.sh ${{ matrix.target }}
+
+      - name: Smoke test
+        if: matrix.target != 'windows-x86_64'
+        run: |
+          f=dist/${{ matrix.target }}/ffmpeg
+          file "$f"
+          "$f" -hide_banner -version
+          "$f" -hide_banner -decoders | grep -E ' (h264|hevc|aac|ac3|eac3_eae) '
+          "$f" -hide_banner -filters | grep -E 'tonemap|inlineass' || true
+          # lavfi is a device and libavdevice is disabled (like Plex): raw input
+          "$f" -hide_banner -f rawvideo -pix_fmt yuv420p -s 320x240 -r 25 -t 1 -i /dev/zero \
+               -f s16le -ar 48000 -ac 2 -t 1 -i /dev/zero -c:v libx264 -c:a aac -f null -
+
+      - name: Check the Windows binary
+        if: matrix.target == 'windows-x86_64'
+        run: |
+          f=dist/${{ matrix.target }}/ffmpeg.exe
+          file "$f"
+          # only system DLLs must be imported
+          /opt/llvm-mingw/bin/llvm-readobj --coff-imports "$f" | grep 'Name:' | sort -u
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: |
+            dist/${{ matrix.target }}/ffmpeg*
+            dist/${{ matrix.target }}/configure-cmdline.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}-debug
+          path: dist/${{ matrix.target }}/debug
+
+  macos:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-15
+          - target: macos-x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          brew install meson ninja nasm cmake pkg-config autoconf automake libtool
+          # use the static libraries built by ci/deps.sh, never Homebrew's
+          echo "PKG_CONFIG_PATH=" >> "$GITHUB_ENV"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps/${{ matrix.target }}
+            .deps-src
+          key: deps-${{ matrix.target }}-${{ hashFiles('ci/deps.sh', 'ci/build.sh') }}
+
+      - name: Build
+        run: ci/build.sh ${{ matrix.target }}
+
+      - name: Smoke test
+        run: |
+          f=dist/${{ matrix.target }}/ffmpeg
+          file "$f"
+          # only system libraries/frameworks must be linked
+          otool -L "$f"
+          ! otool -L "$f" | grep -E '/(opt|usr/local)/'
+          "$f" -hide_banner -version
+          # lavfi is a device and libavdevice is disabled (like Plex): raw input
+          "$f" -hide_banner -f rawvideo -pix_fmt yuv420p -s 320x240 -r 25 -t 1 -i /dev/zero \
+               -f s16le -ar 48000 -ac 2 -t 1 -i /dev/zero -c:v libx264 -c:a aac -f null -
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: |
+            dist/${{ matrix.target }}/ffmpeg
+            dist/${{ matrix.target }}/configure-cmdline.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}-debug
+          path: dist/${{ matrix.target }}/debug
+
+  macos-universal:
+    name: macos-universal
+    needs: macos
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-macos-*
+          path: in
+      - name: lipo
+        run: |
+          mkdir -p out
+          lipo -create in/ffmpeg-macos-arm64/ffmpeg in/ffmpeg-macos-x86_64/ffmpeg -output out/ffmpeg
+          lipo -info out/ffmpeg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-macos-universal
+          path: out/ffmpeg
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos-universal]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-*
+          path: in
+      - name: Package
+        run: |
+          mkdir out
+          for d in in/ffmpeg-*; do
+            n=$(basename "$d")
+            case $n in *-debug) continue ;; esac
+            tar -C "$d" -cJf "out/$n.tar.xz" .
+          done
+          ls -la out
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" out/* --repo "$GITHUB_REPOSITORY" --title "${GITHUB_REF_NAME}" --generate-notes

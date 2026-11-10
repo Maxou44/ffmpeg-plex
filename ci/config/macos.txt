@@ -1,0 +1,14 @@
+# macOS (arm64 and x86_64) - Plex: VideoToolbox, AudioToolbox, OpenCL
+# --arch is set by build.sh
+--target-os=darwin
+--enable-opencl
+--enable-videotoolbox
+--enable-audiotoolbox
+
+--enable-decoder=eac3_at
+--enable-encoder=aac_at,h264_videotoolbox,hevc_videotoolbox
+--enable-hwaccel=av1_videotoolbox
+
+# hwaccels of the built-in decoders (Plex ships them in the codec packs)
+--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox,mpeg1_videotoolbox,mpeg2_videotoolbox
+--enable-hwaccel=mpeg4_videotoolbox,h263_videotoolbox,prores_videotoolbox,vp9_videotoolbox

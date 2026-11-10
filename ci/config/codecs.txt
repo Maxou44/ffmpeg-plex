@@ -1,0 +1,34 @@
+# Codecs that Plex Media Server does not build into the transcoder but
+# downloads at runtime as separate "codec packs" (Codecs/<build>-<platform>/
+# xxx_decoder.dll|.so, e.g. aac_decoder, ac3_decoder, dca_decoder,
+# h264_decoder, libx264_encoder, mp3_decoder, mpeg2video_decoder,
+# vc1_decoder...). This build has no runtime loading, so they are built in.
+#
+# Plex does not publish the full list of its codec packs: this list covers
+# the ones observed in Plex Media Server and the other common formats it
+# transcodes. Add or remove codecs here as needed.
+#
+# libx264 makes the build GPL (like Plex's libx264_encoder codec pack).
+
+--enable-gpl
+--enable-libx264
+--enable-libmp3lame
+
+# video decoders
+--enable-decoder=h264,hevc,vvc
+--enable-decoder=mpeg1video,mpeg2video,mpeg4,h263,h263p,h261
+--enable-decoder=msmpeg4v1,msmpeg4v2,msmpeg4v3,wmv1,wmv2,wmv3,wmv3image,vc1,vc1image
+--enable-decoder=vp6,vp6a,vp6f,vp8,vp9,theora,flv,svq1,svq3,rv10,rv20,rv30,rv40
+--enable-decoder=prores,dnxhd,cinepak,indeo3,indeo5,mjpegb,hap,cfhd,utvideo
+
+# audio decoders
+--enable-decoder=aac,aac_latm,aac_fixed,ac3,eac3,dca,truehd,mlp
+--enable-decoder=mp1,mp2,mp3,mp1float,mp2float,mp3float,mp3adu,mp3on4
+--enable-decoder=wmav1,wmav2,wmapro,wmalossless,wmavoice
+--enable-decoder=amrnb,amrwb,cook,atrac1,atrac3,atrac3p,atrac9,ra_144,ra_288,ralf
+--enable-decoder=nellymoser,qdm2,qdmc,speex,tak,tta,wavpack,ape,dsd_lsbf,dsd_msbf
+--enable-decoder=adpcm_ima_wav,adpcm_ima_qt,adpcm_ms,adpcm_swf,adpcm_g722,adpcm_g726
+--enable-decoder=gsm,gsm_ms,g723_1,g729,pcm_bluray,pcm_dvd,s302m,dolby_e,sipr
+
+# encoders
+--enable-encoder=libx264,libmp3lame,aac,ac3,eac3,mp2,mpeg2video,mpeg4

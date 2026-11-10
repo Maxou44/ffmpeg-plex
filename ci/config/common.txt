@@ -1,0 +1,94 @@
+# configure options shared by all targets.
+#
+# Taken from the configuration of the Plex Transcoder shipped with Plex Media
+# Server 1.43.5.11029 (ffmpeg 6.1-a336ba97d4), see `Plex Transcoder -buildconf`.
+# Differences with Plex, needed for a single static binary:
+#   - --enable-static --disable-shared instead of --disable-static --enable-shared
+#   - no --external-decoder=h264: the decoders Plex downloads at runtime as
+#     "codec packs" are built in, see codecs.txt
+#   - toolchain/paths options (--cc, --prefix, --pkg-config, conan include and
+#     library paths) are set by build.sh
+# One option per line; lines starting with '#' are ignored.
+
+--enable-static
+--disable-shared
+--disable-libx264
+--disable-hwaccels
+--disable-protocol=concat
+--enable-debug
+--enable-muxers
+--enable-libxml2
+--fatal-warnings
+--disable-gmp
+--disable-avdevice
+--disable-bzlib
+--disable-sdl2
+--disable-decoders
+--disable-devices
+--disable-encoders
+--disable-ffprobe
+--disable-ffplay
+--disable-doc
+--disable-iconv
+--disable-lzma
+--disable-schannel
+--disable-linux-perf
+--disable-mediacodec
+--enable-eae
+--disable-protocol=udp,udplite
+--strip=true
+--pkg-config-flags=--static
+--enable-openssl
+# FFmpeg 8.x requires it with OpenSSL >= 3 (Apache 2.0); not needed by 6.1
+--enable-version3
+--enable-libass
+--enable-libopus
+--enable-libvorbis
+--enable-libdav1d
+
+--enable-decoder=png
+--enable-decoder=apng
+--enable-decoder=bmp
+--enable-decoder=mjpeg
+--enable-decoder=thp
+--enable-decoder=gif
+--enable-decoder=dirac
+--enable-decoder=ffv1
+--enable-decoder=ffvhuff
+--enable-decoder=huffyuv
+--enable-decoder=libdav1d
+--enable-decoder=av1
+--enable-decoder=rawvideo
+--enable-decoder=zero12v
+# ayuv: decoder removed from FFmpeg in 7.0
+--enable-decoder=r210
+--enable-decoder=v210
+--enable-decoder=v210x
+--enable-decoder=v308
+--enable-decoder=v408
+--enable-decoder=v410
+--enable-decoder=y41p
+--enable-decoder=yuv4
+--enable-decoder=ansi
+--enable-decoder=alac
+--enable-decoder=flac
+--enable-decoder=vorbis
+--enable-decoder=opus
+--enable-decoder=pcm_f32be,pcm_f32le,pcm_f64be,pcm_f64le,pcm_lxf
+--enable-decoder=pcm_s16be,pcm_s16be_planar,pcm_s16le,pcm_s16le_planar
+--enable-decoder=pcm_s24be,pcm_s24le,pcm_s24le_planar
+--enable-decoder=pcm_s32be,pcm_s32le,pcm_s32le_planar
+--enable-decoder=pcm_s8,pcm_s8_planar
+--enable-decoder=pcm_u16be,pcm_u16le,pcm_u24be,pcm_u24le,pcm_u32be,pcm_u32le,pcm_u8
+--enable-decoder=pcm_alaw,pcm_mulaw
+--enable-decoder=ass,dvbsub,dvdsub,ccaption,pgssub,jacosub,microdvd,movtext,mpl2
+--enable-decoder=pjs,realtext,sami,ssa,stl,subrip,subviewer,text,vplayer,webvtt,xsub
+--enable-decoder=eac3_eae,truehd_eae,mlp_eae
+
+--enable-encoder=flac,alac,libvorbis,libopus,mjpeg,png,rawvideo,wrapped_avframe
+--enable-encoder=ass,dvbsub,dvdsub,movtext,ssa,subrip,text,webvtt,xsub
+--enable-encoder=pcm_f32be,pcm_f32le,pcm_f64be,pcm_f64le
+--enable-encoder=pcm_s8,pcm_s8_planar,pcm_s16be,pcm_s16be_planar,pcm_s16le,pcm_s16le_planar
+--enable-encoder=pcm_s24be,pcm_s24le,pcm_s24le_planar,pcm_s32be,pcm_s32le,pcm_s32le_planar
+--enable-encoder=pcm_u8,pcm_u16be,pcm_u16le,pcm_u24be,pcm_u24le,pcm_u32be,pcm_u32le
+--enable-encoder=eac3_eae

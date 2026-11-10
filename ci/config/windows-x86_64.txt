@@ -1,0 +1,30 @@
+# Windows x86_64 (cross-compiled from Linux with llvm-mingw, like Plex)
+# Plex: MediaFoundation, QSV (libvpl), NVENC/NVDEC (CUDA via clang), OpenCL,
+# D3D11VA/DXVA2
+--arch=x86_64
+--target-os=mingw64
+--enable-cross-compile
+--enable-mediafoundation
+--enable-w32threads
+--enable-libvpl
+--enable-cuda-llvm
+--enable-opencl
+--enable-ffnvcodec
+--enable-nvdec
+--enable-nvenc
+--enable-d3d11va
+--enable-dxva2
+
+--enable-decoder=eac3_mf,wmalossless_mf,wmapro_mf,wmav1_mf,wmav2_mf,wmavoice_mf
+--enable-encoder=aac_mf,h264_qsv,hevc_qsv,h264_nvenc,hevc_nvenc,h264_mf,hevc_mf
+--enable-hwaccel=av1_nvdec,av1_d3d11va,av1_d3d11va2,av1_dxva2
+
+# hwaccels of the built-in decoders (Plex ships them in the codec packs)
+--enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2,h264_nvdec
+--enable-hwaccel=hevc_d3d11va,hevc_d3d11va2,hevc_dxva2,hevc_nvdec
+--enable-hwaccel=mpeg2_d3d11va,mpeg2_d3d11va2,mpeg2_dxva2,mpeg2_nvdec
+--enable-hwaccel=vc1_d3d11va,vc1_d3d11va2,vc1_dxva2,vc1_nvdec
+--enable-hwaccel=wmv3_d3d11va,wmv3_d3d11va2,wmv3_dxva2,wmv3_nvdec
+--enable-hwaccel=vp9_d3d11va,vp9_d3d11va2,vp9_dxva2,vp9_nvdec
+
+--extra-libs=-lwinmm -lwsock32 -lcrypt32 -luuid

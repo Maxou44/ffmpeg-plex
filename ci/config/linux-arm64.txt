@@ -1,0 +1,7 @@
+# Linux arm64 - Plex: OpenMAX IL hardware decoders/encoder (no CUDA/VAAPI/OpenCL)
+--arch=aarch64
+--target-os=linux
+--enable-omx
+
+--enable-decoder=h264_omx,hevc_omx
+--enable-encoder=h264_omx
