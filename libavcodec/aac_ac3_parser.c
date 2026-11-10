@@ -106,10 +106,15 @@ get_next:
 
             buf += offset;
             buf_size -= offset;
+            uint64_t layout = 0;
             while (buf_size > 0) {
                 int ret = avpriv_ac3_parse_header(&phrd, buf, buf_size);
 
                 if (ret < 0 || hdr.frame_size > buf_size)
+                    return i;
+
+                layout |= hdr.channel_layout;
+                if (av_popcount64(hdr.channel_layout) > EAC3_MAX_CHANNELS)
                     return i;
 
                 if (buf_size > hdr.frame_size) {
@@ -124,6 +129,7 @@ get_next:
                 break;
             }
 
+            hdr.channel_layout = layout;
             avctx->sample_rate = hdr.sample_rate;
 
             if (hdr.bitstream_id > 10)
@@ -143,6 +149,9 @@ get_next:
             if (hdr.bitstream_mode == 0x7 && hdr.channels > 1)
                 avctx->audio_service_type = AV_AUDIO_SERVICE_TYPE_KARAOKE;
             bit_rate = hdr.bit_rate;
+
+            if (avctx->codec_id == AV_CODEC_ID_EAC3 && hdr.eac3_extension_type_a)
+                avctx->profile = AV_PROFILE_EAC3_DDP_ATMOS;
 #endif
         } else {
 #if CONFIG_AAC_PARSER
