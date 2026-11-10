@@ -23,6 +23,12 @@
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
 
+//PLEX
+#include "plex.h"
+#include "libavformat/internal.h"
+#include "libavformat/demux.h"
+//PLEX
+
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/display.h"
@@ -775,7 +781,7 @@ static int input_thread(void *arg)
             else {
                 av_log(d, AV_LOG_ERROR, "Error during demuxing: %s\n",
                        av_err2str(ret));
-                ret = exit_on_error ? ret : 0;
+                ret = (exit_on_error || exit_on_io_error) ? ret : 0; //PLEX
             }
 
             ret_bsf = demux_bsf_flush(d, &dt);
@@ -833,6 +839,8 @@ static int input_thread(void *arg)
         ret = demux_send(d, &dt, ds, dt.pkt_demux, send_flags);
         if (ret < 0)
             break;
+
+        plex_throttle(); //PLEX: delay if PMS asked us to
     }
 
     // EOF/EXIT is normal termination
@@ -2052,6 +2060,13 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
     if (ret < 0)
         return ret;
 
+//PLEX
+    for (int i = 0; i < ic->nb_streams; i++) {
+        if (ic->streams[i]->codecpar->codec_id != AV_CODEC_ID_AAC)
+            plex_report_stream(ic->streams[i]);
+    }
+//PLEX
+
     /* apply forced codec ids */
     for (int i = 0; i < ic->nb_streams; i++) {
         const AVCodec *dummy;
@@ -2072,6 +2087,76 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
         /* If not enough info to get the stream parameters, we decode the
            first frames to get it. (used in mpeg case for example) */
         ret = avformat_find_stream_info(ic, opts);
+
+//PLEX
+        {
+            int repeat_find_stream_info = ic->nb_streams > orig_nb_streams;
+            for (int i = 0; i < ic->nb_streams; i++) {
+                AVStream *st = ic->streams[i];
+                FFStream *const sti = ffstream(st);
+                if (i > orig_nb_streams || sti->request_probe == -1 || st->codecpar->codec_id == AV_CODEC_ID_AAC) // -1 indicates the codec was probed
+                    plex_report_stream(st);
+
+                if (st->codecpar &&
+                    st->codecpar->codec_id == AV_CODEC_ID_AAC_LATM &&
+                    st->codecpar->sample_rate == 0)
+                    repeat_find_stream_info = 1;
+            }
+
+            if (repeat_find_stream_info) {
+                for (int i = orig_nb_streams; i < ic->nb_streams; i++) {
+                    AVStream *st = ic->streams[i];
+                    FFStream *const sti = ffstream(st);
+                    const AVCodec *dummy;
+
+                    ret = choose_decoder(o, f, ic, st, HWACCEL_NONE, AV_HWDEVICE_TYPE_NONE,
+                                         &dummy);
+                    if (ret < 0)
+                        return ret;
+
+                    if (sti->info) {
+                        memset(sti->info, 0, sizeof(*sti->info));
+                        sti->info->last_dts = AV_NOPTS_VALUE;
+                        sti->info->fps_first_dts = AV_NOPTS_VALUE;
+                        sti->info->fps_last_dts  = AV_NOPTS_VALUE;
+                    }
+
+                    sti->probe_packets = ic->max_probe_packets;
+                    sti->last_dts_for_order_check = AV_NOPTS_VALUE;
+                    sti->need_context_update = 1;
+                    st->r_frame_rate.num = st->r_frame_rate.den = 0;
+                    sti->codec_info_nb_frames = 0;
+                    st->avg_frame_rate = sti->avg_frame_rate_pre;
+                }
+                for (int i = 0; i < orig_nb_streams; i++) {
+                    AVStream *st = ic->streams[i];
+                    FFStream *const sti = ffstream(st);
+
+                    av_dict_free(&opts[i]);
+
+                    if (sti->info) {
+                        memset(sti->info, 0, sizeof(*sti->info));
+                        sti->info->last_dts = AV_NOPTS_VALUE;
+                        sti->info->fps_first_dts = AV_NOPTS_VALUE;
+                        sti->info->fps_last_dts  = AV_NOPTS_VALUE;
+                    }
+
+                    sti->codec_info_nb_frames = 0;
+                }
+                av_freep(&opts);
+
+                ret = setup_find_stream_info_opts(ic, o->g->codec_opts, &opts);
+                if (ret < 0)
+                    return ret;
+
+                orig_nb_streams = ic->nb_streams;
+                ret = avformat_find_stream_info(ic, opts);
+            }
+
+            for (int i = 0; i < ic->nb_streams; i++)
+                plex_report_stream_detail(ic->streams[i]);
+        }
+//PLEX
 
         for (int i = 0; i < orig_nb_streams; i++)
             av_dict_free(&opts[i]);

@@ -801,6 +801,10 @@ extern int copy_unknown_streams;
 
 extern int recast_media;
 
+//PLEX
+extern int exit_on_io_error;
+//PLEX
+
 extern FILE *vstats_file;
 
 void term_init(void);

@@ -181,6 +181,11 @@ int show_colors(void *optctx, const char *opt, const char *arg);
  */
 int opt_loglevel(void *optctx, const char *opt, const char *arg);
 
+/**
+ * Same as opt_loglevel(), applying the level with set_level_fn. (PLEX)
+ */
+int opt_loglevel_ext(const char *opt, const char *arg, void (*set_level_fn)(int));
+
 int opt_report(void *optctx, const char *opt, const char *arg);
 int init_report(const char *env, FILE **file);
 

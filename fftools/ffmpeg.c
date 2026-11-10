@@ -84,6 +84,8 @@
 #include "ffmpeg.h"
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
+
+#include "plex.h" // PLEX
 #include "graph/graphprint.h"
 
 const char program_name[] = "ffmpeg";
@@ -365,6 +367,7 @@ static void ffmpeg_cleanup(int ret)
         av_log(NULL, AV_LOG_INFO, "Conversion failed!\n");
     }
     term_exit();
+    plex_uninit(); //PLEX
     ffmpeg_exited = 1;
 }
 
@@ -584,8 +587,9 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     const char *hours_sign;
     int ret;
     float t;
+    static int64_t run_time = 0; //PLEX
 
-    if (!print_stats && !is_last_report && !progress_avio)
+    if (!print_stats && !is_last_report && !progress_avio && !plexContext.progress_url) //PLEX
         return;
 
     if (!is_last_report) {
@@ -595,6 +599,7 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
         if (((cur_time - last_time) < stats_period && !first_report) ||
             (first_report && atomic_load(&nb_output_dumped) < nb_output_files))
             return;
+        run_time = cur_time - last_time; //PLEX
         last_time = cur_time;
     }
 
@@ -641,6 +646,8 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
         if (copy_ts_first_pts != AV_NOPTS_VALUE)
             pts -= copy_ts_first_pts;
     }
+
+    plex_report_progress(pts, total_size, run_time); //PLEX
 
     us    = FFABS64U(pts) % AV_TIME_BASE;
     secs  = FFABS64U(pts) / AV_TIME_BASE % 60;
@@ -748,6 +755,8 @@ static void print_stream_maps(void)
     }
 
     for (OutputStream *ost = ost_iter(NULL); ost; ost = ost_iter(ost)) {
+        plex_report_output_size(ost); //PLEX
+
         if (ost->attachment_filename) {
             /* an attached file */
             av_log(NULL, AV_LOG_INFO, "  File %s -> Stream #%d:%d\n",
@@ -992,6 +1001,8 @@ int main(int argc, char **argv)
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
     parse_loglevel(argc, argv, options);
 
+    plex_init(argc, argv, options); // PLEX: Setup log callback
+
 #if CONFIG_AVDEVICE
     avdevice_register_all();
 #endif
@@ -1022,6 +1033,8 @@ int main(int argc, char **argv)
         ret = 1;
         goto finish;
     }
+
+    plex_feedback(nb_input_files ? input_files[0]->ctx : NULL); //PLEX
 
 #if CONFIG_MEDIACODEC
     android_binder_threadpool_init_if_required();

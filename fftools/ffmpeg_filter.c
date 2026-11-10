@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "ffmpeg.h"
+#include "plex.h" // PLEX
 #include "graph/graphprint.h"
 
 #include "libavfilter/avfilter.h"
@@ -2032,6 +2033,7 @@ static void cleanup_filtergraph(FilterGraph *fg, FilterGraphThread *fgt)
         fg->outputs[i]->filter = NULL;
     for (int i = 0; i < fg->nb_inputs; i++)
         fg->inputs[i]->filter = NULL;
+    plex_unlink_subtitles_from_graph(fgt->graph); //PLEX
     avfilter_graph_free(&fgt->graph);
 }
 
@@ -2141,6 +2143,11 @@ static int configure_filtergraph(FilterGraph *fg, FilterGraphThread *fgt)
         avfilter_graph_set_auto_convert(fgt->graph, AVFILTER_AUTO_CONVERT_NONE);
     if ((ret = avfilter_graph_config(fgt->graph, NULL)) < 0)
         goto fail;
+
+//PLEX
+    // make sure the inlineass contexts are set up properly for each stream
+    plex_link_subtitles_to_graph(fgt->graph);
+//PLEX
 
     fgp->is_meta = graph_is_meta(fgt->graph);
 
@@ -3261,6 +3268,7 @@ static void fg_thread_uninit(FilterGraphThread *fgt)
     av_freep(&fgt->eof_in);
     av_freep(&fgt->eof_out);
 
+    plex_unlink_subtitles_from_graph(fgt->graph); //PLEX
     avfilter_graph_free(&fgt->graph);
 
     memset(fgt, 0, sizeof(*fgt));

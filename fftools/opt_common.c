@@ -1249,7 +1249,8 @@ int opt_max_alloc(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-int opt_loglevel(void *optctx, const char *opt, const char *arg)
+//PLEX: the level setter is a parameter so that -loglevel_plex can reuse the parser
+int opt_loglevel_ext(const char *opt, const char *arg, void (*set_level_fn)(int))
 {
     const struct { const char *name; int level; } log_levels[] = {
         { "quiet"  , AV_LOG_QUIET   },
@@ -1339,8 +1340,13 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
 
 end:
     av_log_set_flags(flags);
-    av_log_set_level(level);
+    set_level_fn(level); //PLEX
     return 0;
+}
+
+int opt_loglevel(void *optctx, const char *opt, const char *arg)
+{
+    return opt_loglevel_ext(opt, arg, av_log_set_level);
 }
 
 #if CONFIG_AVDEVICE

@@ -22,6 +22,8 @@
 
 #include "cmdutils.h"
 #include "ffmpeg.h"
+#include "plex.h" // PLEX
+#include "libavformat/internal.h" //PLEX
 #include "ffmpeg_mux.h"
 #include "ffmpeg_sched.h"
 #include "fopen_utf8.h"
@@ -1719,8 +1721,10 @@ static int map_auto_video(Muxer *mux, const OptionsContext *o)
 
         return ost_add(mux, o, AVMEDIA_TYPE_VIDEO, NULL, ofilter, NULL, NULL);
     }
-    if (best_ist)
+    if (best_ist) {
+        plex_link_input_stream(best_ist); // PLEX
         return ost_add(mux, o, AVMEDIA_TYPE_VIDEO, best_ist, NULL, NULL, NULL);
+    }
 
     return 0;
 }
@@ -1844,6 +1848,12 @@ static int map_manual(Muxer *mux, const OptionsContext *o, const StreamMap *map)
         OutputFilter *ofilter = NULL;
         int j, k;
 
+//PLEX
+        if (map->file_index >= 0 && map->file_index < nb_input_files &&
+            map->stream_index >= 0 && map->stream_index < input_files[map->file_index]->nb_streams)
+            plex_link_input_stream(input_files[map->file_index]->streams[map->stream_index]);
+//PLEX
+
         for (j = 0; j < nb_filtergraphs; j++) {
             fg = filtergraphs[j];
             for (k = 0; k < fg->nb_outputs; k++) {
@@ -1885,6 +1895,19 @@ loop_end:
             return 0;
         if(o->    data_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_DATA)
             return 0;
+
+//PLEX
+        if (ignore_unknown_streams &&
+            (ist->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO ||
+             ist->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) &&
+            ffstream(ist->st)->codec_info_nb_frames_total == 0) {
+            av_log(mux, AV_LOG_WARNING, "Skipping stream #%d:%d - not parsed.\n",
+                   map->file_index, map->stream_index);
+            return 0;
+        }
+
+        plex_link_input_stream(ist);
+//PLEX
 
         if (ist->st->codecpar->codec_type == AVMEDIA_TYPE_UNKNOWN &&
             !copy_unknown_streams) {
@@ -2041,6 +2064,13 @@ static int create_streams(Muxer *mux, const OptionsContext *o)
                 return ret;
         }
     }
+
+//PLEX
+    /* we need to detect the format of the subtitle stream (if any) and init
+     some stuff before we do the actual pre set-up */
+    for (InputStream *ist = ist_iter(NULL); ist; ist = ist_iter(ist))
+        plex_prepare_setup_streams_for_input_stream(ist);
+//PLEX
 
     if (!o->nb_stream_maps) {
         av_log(mux, AV_LOG_VERBOSE, "No explicit maps, mapping streams automatically...\n");

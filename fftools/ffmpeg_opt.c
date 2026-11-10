@@ -28,6 +28,7 @@
 #endif
 
 #include "ffmpeg.h"
+#include "plex.h" // PLEX
 #include "ffmpeg_sched.h"
 #include "cmdutils.h"
 #include "opt_common.h"
@@ -89,6 +90,10 @@ static int no_file_overwrite  = 0;
 int ignore_unknown_streams = 0;
 int copy_unknown_streams = 0;
 int recast_media = 0;
+
+//PLEX
+int exit_on_io_error = 0;
+//PLEX
 
 // this struct is passed as the optctx argument
 // to func_arg() for global options
@@ -827,7 +832,7 @@ int find_codec(void *logctx, const char *name,
         return encoder ? AVERROR_ENCODER_NOT_FOUND :
                          AVERROR_DECODER_NOT_FOUND;
     }
-    if (codec->type != type && !recast_media) {
+    if (codec->type != type && type != AVMEDIA_TYPE_UNKNOWN && !recast_media) { //PLEX
         av_log(logctx, AV_LOG_FATAL, "Invalid %s type '%s'\n", codec_string, name);
         return AVERROR(EINVAL);
     }
@@ -2176,6 +2181,21 @@ const OptionDef options[] = {
     { "filter_hw_device", OPT_TYPE_FUNC, OPT_FUNC_ARG | OPT_EXPERT,
         { .func_arg = opt_filter_hw_device },
         "set hardware device used when filtering", "device" },
+
+//PLEX
+    { "map_inlineass",          OPT_TYPE_FUNC, OPT_FUNC_ARG | OPT_EXPERT | OPT_PERFILE | OPT_OUTPUT,
+        { .func_arg = plex_opt_subtitle_stream },
+        "index of the subtitle stream to burn into the video", "input_file_id:stream_specifier" },
+    { "loglevel_plex",          OPT_TYPE_FUNC, OPT_FUNC_ARG | OPT_EXPERT,
+        { .func_arg = plex_opt_loglevel },
+        "log level for messages that will be sent to PMS", "loglevel" },
+    { "progressurl",            OPT_TYPE_FUNC, OPT_FUNC_ARG | OPT_EXPERT,
+        { .func_arg = plex_opt_progress_url },
+        "write progress information via HTTP PUT", "url" },
+    { "xioerror",               OPT_TYPE_BOOL, OPT_EXPERT,
+        { &exit_on_io_error },
+        "exit on I/O error", "error" },
+//PLEX
 
     // deprecated options
 #if FFMPEG_OPT_ADRIFT_THRESHOLD

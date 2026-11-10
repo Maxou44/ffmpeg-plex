@@ -35,6 +35,7 @@
 #include "libavcodec/codec.h"
 
 #include "ffmpeg.h"
+#include "plex.h" // PLEX
 
 typedef struct DecoderPriv {
     Decoder             dec;
@@ -608,6 +609,10 @@ static int process_subtitle(DecoderPriv *dp, AVFrame *frame)
 
     if (!subtitle)
         return 0;
+
+    // PLEX: pass to any instances of inlineass
+    if (dp->log_parent)
+        plex_process_subtitles((const InputStream *)dp->log_parent, dp->dec_ctx, frame);
 
     ret = sch_dec_send(dp->sch, dp->sch_idx, 0, frame);
     if (ret < 0)
@@ -1661,6 +1666,14 @@ static int dec_open(DecoderPriv *dp, AVDictionary **dec_opts,
 
     return 0;
 }
+
+//PLEX
+int plex_dec_hwaccel_active(const Decoder *dec)
+{
+    const DecoderPriv *dp = (const DecoderPriv *)dec;
+    return dp->hwaccel_id != HWACCEL_NONE;
+}
+//PLEX
 
 int dec_init(Decoder **pdec, Scheduler *sch,
              AVDictionary **dec_opts, const DecoderOpts *o,
