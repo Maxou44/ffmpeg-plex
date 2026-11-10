@@ -559,6 +559,28 @@ static void update_timestamps(AVFormatContext *s, AVStream *st, AVPacket *pkt)
             sti->cur_dts = wrap_timestamp(st, sti->cur_dts);
     }
 
+//PLEX
+    if ((s->flags & AVFMT_FLAG_DISCARD_CORRUPT_TS) &&
+        (pkt->flags & AV_PKT_FLAG_CORRUPT)) {
+        pkt->pts = pkt->dts = AV_NOPTS_VALUE;
+        av_log(s, AV_LOG_WARNING,
+               "Discarded timestamp on corrupted packet (stream = %d)\n",
+               pkt->stream_index);
+    }
+
+    if (s->flags & AVFMT_FLAG_FILL_WALLCLOCK_DTS) {
+        int64_t cur_wallclock_time = av_gettime_relative();
+        if (pkt->dts == AV_NOPTS_VALUE && sti->cur_dts != AV_NOPTS_VALUE && sti->cur_wallclock_time) {
+            int64_t wallclock_offset = av_rescale_q(sti->cur_wallclock_time - cur_wallclock_time, AV_TIME_BASE_Q, st->time_base);
+            pkt->dts = sti->cur_dts + FFMAX(wallclock_offset, 1);
+            av_log(s, AV_LOG_VERBOSE,
+                   "Filled timestamp from wallclock (stream = %d; last = %"PRId64"; val = %"PRId64")\n",
+                   pkt->stream_index, sti->cur_dts, pkt->dts);
+        }
+        sti->cur_wallclock_time = cur_wallclock_time;
+    }
+//PLEX
+
     pkt->dts = wrap_timestamp(st, pkt->dts);
     pkt->pts = wrap_timestamp(st, pkt->pts);
 

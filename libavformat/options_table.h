@@ -52,6 +52,10 @@ static const AVOption avformat_options[] = {
 {"nobuffer", "reduce the latency introduced by optional buffering", 0, AV_OPT_TYPE_CONST, {.i64 = AVFMT_FLAG_NOBUFFER }, 0, INT_MAX, D, .unit = "fflags"},
 {"bitexact", "do not write random/volatile data", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_BITEXACT }, 0, 0, E, .unit = "fflags" },
 {"autobsf", "add needed bsfs automatically", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_AUTO_BSF }, 0, 0, E, .unit = "fflags" },
+//PLEX
+{"discardcorruptts", "discard timestamps on corrupted frames", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_DISCARD_CORRUPT_TS }, 0, 0, E, .unit = "fflags" },
+{"fillwallclockdts", "fill missing or discarded DTS values from wallclock (for live streams)", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_FILL_WALLCLOCK_DTS }, 0, 0, E, .unit = "fflags" },
+//PLEX
 {"seek2any", "allow seeking to non-keyframes on demuxer level when supported", OFFSET(seek2any), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, D},
 {"analyzeduration", "specify how many microseconds are analyzed to probe the input", OFFSET(max_analyze_duration), AV_OPT_TYPE_INT64, {.i64 = 0 }, 0, (double)INT64_MAX, D},
 {"cryptokey", "decryption key", OFFSET(key), AV_OPT_TYPE_BINARY, {.dbl = 0}, 0, 0, D},

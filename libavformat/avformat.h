@@ -1434,6 +1434,10 @@ typedef struct AVFormatContext {
 #define AVFMT_FLAG_SORT_DTS    0x10000 ///< try to interleave outputted packets by dts (using this flag can slow demuxing down)
 #define AVFMT_FLAG_FAST_SEEK   0x80000 ///< Enable fast, but inaccurate seeks for some formats
 #define AVFMT_FLAG_AUTO_BSF   0x200000 ///< Add bitstream filters as requested by the muxer
+//PLEX
+#define AVFMT_FLAG_DISCARD_CORRUPT_TS 0x400000 ///< Discard timestamps of frames marked corrupt
+#define AVFMT_FLAG_FILL_WALLCLOCK_DTS 0x800000 ///< Fill missing or discarded DTS values from wallclock (for live streams)
+//PLEX
 
     /**
      * Maximum number of bytes read from input in order to determine stream
