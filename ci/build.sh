@@ -134,15 +134,18 @@ cd "$ROOT"
 # --------------------------------------------------------------------------
 # configure options: Plex configuration + toolchain
 read_args() { grep -v '^[[:space:]]*#' "$1" | sed '/^[[:space:]]*$/d'; }
-
-ARGS=()
-while IFS= read -r a; do ARGS+=("$a"); done < <(
+# (a function: bash 3.2, the macOS one, cannot parse a case inside <( ))
+config_args() {
     read_args "$CI/config/common.txt"
     read_args "$CI/config/codecs.txt"
     case $OS in
         macos) read_args "$CI/config/macos.txt" ;;
         *)     read_args "$CI/config/$TARGET.txt" ;;
-    esac)
+    esac
+}
+
+ARGS=()
+while IFS= read -r a; do ARGS+=("$a"); done < <(config_args)
 
 # FFmpeg 8.x warns that the OpenMAX encoders are deprecated, which
 # --fatal-warnings turns into an error: keep h264_omx like Plex, drop the flag

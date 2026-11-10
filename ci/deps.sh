@@ -61,7 +61,7 @@ autotools() {
 meson_build() {
     local cross=()
     [ -n "${CROSS:-}" ] && cross=(--cross-file "$MESON_CROSS")
-    meson setup build "${cross[@]}" --prefix="$PREFIX" --libdir=lib \
+    meson setup build ${cross[@]+"${cross[@]}"} --prefix="$PREFIX" --libdir=lib \
         --buildtype=release --default-library=static -Db_staticpic=true \
         -Dc_args="$CFLAGS" -Dcpp_args="$CXXFLAGS" "$@"
     ninja -C build -j"$JOBS"
@@ -71,7 +71,7 @@ meson_build() {
 cmake_build() {
     local cross=()
     [ -n "${CROSS:-}" ] && cross=(-DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN")
-    cmake -S . -B build -G Ninja "${cross[@]}" -DCMAKE_BUILD_TYPE=Release \
+    cmake -S . -B build -G Ninja ${cross[@]+"${cross[@]}"} -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
         -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DCMAKE_C_FLAGS="$CFLAGS" -DCMAKE_CXX_FLAGS="$CXXFLAGS" "$@"
@@ -181,7 +181,7 @@ build_x264() {
     fetch x264 https://code.videolan.org/videolan/x264/-/archive/$X264_REF/x264-$X264_REF.tar.bz2
     local cross=()
     [ -n "${CROSS:-}" ] && cross=(--host="$HOST" --cross-prefix="$HOST-")
-    ./configure "${cross[@]}" --prefix="$PREFIX" --libdir="$PREFIX/lib" \
+    ./configure ${cross[@]+"${cross[@]}"} --prefix="$PREFIX" --libdir="$PREFIX/lib" \
         --enable-static --enable-pic --disable-cli --extra-cflags="$CFLAGS"
     make -j"$JOBS" && make install-lib-static
 }
