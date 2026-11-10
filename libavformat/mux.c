@@ -942,6 +942,7 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *pkt,
     FormatContextInternal *const fci = ff_fc_internal(s);
     FFFormatContext *const si = &fci->fc;
     int stream_count = 0;
+    int sparse_count = 0; // PLEX
     int noninterleaved_count = 0;
     int ret;
 
@@ -956,6 +957,12 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *pkt,
         const AVCodecParameters *const par = st->codecpar;
         if (sti->last_in_packet_buffer) {
             ++stream_count;
+        // PLEX
+        } else if (par->codec_type == AVMEDIA_TYPE_SUBTITLE ||
+                   par->codec_type == AVMEDIA_TYPE_DATA ||
+                   st->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+            ++sparse_count;
+        // PLEX
         } else if (par->codec_type != AVMEDIA_TYPE_ATTACHMENT &&
                    par->codec_id != AV_CODEC_ID_VP8 &&
                    par->codec_id != AV_CODEC_ID_VP9 &&
@@ -967,12 +974,17 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *pkt,
     if (fci->nb_interleaved_streams == stream_count)
         flush = 1;
 
-    if (s->max_interleave_delta > 0 &&
-        si->packet_buffer.head &&
+    // PLEX
+    if (si->packet_buffer.head &&
         si->packet_buffer.head->pkt.dts != AV_NOPTS_VALUE &&
         !flush &&
-        fci->nb_interleaved_streams == stream_count+noninterleaved_count
+        ((s->max_interleave_delta > 0 &&
+          fci->nb_interleaved_streams == stream_count+sparse_count+noninterleaved_count) ||
+         (s->max_sparse_interleave_delta > 0 &&
+          sparse_count &&
+          fci->nb_interleaved_streams == stream_count+sparse_count))
     ) {
+    // PLEX
         AVPacket *const top_pkt = &si->packet_buffer.head->pkt;
         int64_t delta_dts = INT64_MIN;
         int64_t top_dts = av_rescale_q(top_pkt->dts,
@@ -994,13 +1006,26 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *pkt,
             delta_dts = FFMAX(delta_dts, last_dts - top_dts);
         }
 
-        if (delta_dts > s->max_interleave_delta) {
+        // PLEX
+        if (s->max_interleave_delta > 0 &&
+            delta_dts > s->max_interleave_delta &&
+            fci->nb_interleaved_streams == stream_count+sparse_count+noninterleaved_count) {
             av_log(s, AV_LOG_DEBUG,
                    "Delay between the first packet and last packet in the "
                    "muxing queue is %"PRId64" > %"PRId64": forcing output\n",
                    delta_dts, s->max_interleave_delta);
             flush = 1;
+        } else if (s->max_sparse_interleave_delta > 0 &&
+                   delta_dts > s->max_sparse_interleave_delta &&
+                   fci->nb_interleaved_streams == stream_count+sparse_count) {
+            av_log(s, AV_LOG_DEBUG,
+                   "Delay between the first packet and last packet in the "
+                   "muxing queue is %"PRId64" > %"PRId64" and all delayed "
+                   "streams are sparse: forcing output\n",
+                   delta_dts, s->max_sparse_interleave_delta);
+            flush = 1;
         }
+        // PLEX
     }
 
     if (stream_count && flush) {

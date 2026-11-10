@@ -1681,6 +1681,17 @@ typedef struct AVFormatContext {
      */
     int skip_estimate_duration_from_pts;
 
+    // PLEX
+    /**
+     * Maximum buffering duration for interleaving sparse streams.
+     *
+     * @see max_interleave_delta
+     *
+     * Applies only to subtitle and data streams.
+     */
+    int64_t max_sparse_interleave_delta;
+    // PLEX
+
     /**
      * avio flags, used to force AVIO_FLAG_DIRECT.
      * - encoding: unused
