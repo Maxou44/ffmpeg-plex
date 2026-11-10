@@ -133,6 +133,9 @@ build_ogg() {
 
 build_vorbis() {
     fetch libvorbis https://github.com/xiph/vorbis/releases/download/v$VORBIS_VER/libvorbis-$VORBIS_VER.tar.xz
+    # configure passes -force_cpusubtype_ALL on Darwin, which the current
+    # Apple linker no longer accepts
+    sed -i.bak 's/-force_cpusubtype_ALL//g' configure
     autotools --disable-docs --disable-examples --disable-oggtest
 }
 
