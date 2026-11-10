@@ -399,6 +399,7 @@ extern const FFFilter ff_vf_overlay_qsv;
 extern const FFFilter ff_vf_overlay_vaapi;
 extern const FFFilter ff_vf_overlay_vulkan;
 extern const FFFilter ff_vf_overlay_cuda;
+extern const FFFilter ff_vf_overlay_videotoolbox;
 extern const FFFilter ff_vf_owdenoise;
 extern const FFFilter ff_vf_pad;
 extern const FFFilter ff_vf_pad_cuda;
