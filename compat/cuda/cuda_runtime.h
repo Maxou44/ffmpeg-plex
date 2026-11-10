@@ -198,7 +198,7 @@ static __inline__ __device__ float __log2f(float x)
 }
 
 #define __logf(x) (__log2f((x)) * 0.693147f)
-#define __log10f(x) (__log2f((x) * 0.30103f))
+#define __log10f(x) (__log2f((x)) * 0.30103f)
 
 
 static __inline__ __device__ float __sqrtf(float x)
