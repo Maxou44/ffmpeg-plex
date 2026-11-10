@@ -35,6 +35,7 @@
 #include "filters.h"
 #include "video.h"
 #include "libavutil/frame.h"
+#include "libavutil/thread.h"
 
 typedef struct {
     const AVClass *class;
@@ -66,6 +67,11 @@ typedef struct {
 
     AVCodecContext *atsc_dec;
     AVPacket *a53_cc_pkt;
+
+    /* With the threaded ffmpeg CLI, subtitles are appended by the decoder
+     * thread while frames are rendered by the filtergraph thread. */
+    AVMutex lock;
+    int lock_inited;
 } AssContext;
 
 #define OFFSET(x) offsetof(AssContext, x)
@@ -96,6 +102,10 @@ static void ass_log(int ass_level, const char *fmt, va_list args, void *ctx)
 static av_cold int init(AVFilterContext *ctx)
 {
     AssContext *ass = ctx->priv;
+
+    if (ff_mutex_init(&ass->lock, NULL))
+        return AVERROR(ENOMEM);
+    ass->lock_inited = 1;
 
     ass->library = ass_library_init();
 
@@ -171,6 +181,8 @@ static av_cold void uninit(AVFilterContext *ctx)
         ass_library_done(ass->library);
     if (ass->a53_cc_pkt)
         av_packet_free(&ass->a53_cc_pkt);
+    if (ass->lock_inited)
+        ff_mutex_destroy(&ass->lock);
 }
 
 static int query_formats(const AVFilterContext *ctx,
@@ -637,12 +649,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
         calculate_mangle_table(ass, picref);
     }
 
+    ff_mutex_lock(&ass->lock);
     if (ass->atsc_dec)
         handle_atsc_cc(inlink, picref);
 
     image = ass_render_frame(ass->renderer, ass->track, time_ms, NULL);
 
     overlay_ass_image(ass, picref, image);
+    ff_mutex_unlock(&ass->lock);
 
     return ff_filter_frame(outlink, picref);
 }
@@ -667,7 +681,9 @@ static const AVFilterPad inlineass_outputs[] = {
 void avfilter_inlineass_set_storage_size(AVFilterContext *context, int w, int h)
 {
     AssContext *ass = (AssContext *)context->priv;
+    ff_mutex_lock(&ass->lock);
     ass_set_storage_size(ass->renderer, w, h);
+    ff_mutex_unlock(&ass->lock);
 }
 
 void avfilter_inlineass_add_attachment(AVFilterContext *context, AVStream *st)
@@ -689,15 +705,19 @@ void avfilter_inlineass_add_attachment(AVFilterContext *context, AVStream *st)
         !av_strcasecmp( ext, ".ttc" ) ||
         !av_strcasecmp( ext, ".otc" )
     ) {
+        ff_mutex_lock(&assContext->lock);
         ass_add_font(assContext->library, filename,
                      st->codecpar->extradata, st->codecpar->extradata_size);
+        ff_mutex_unlock(&assContext->lock);
     }
 }
 
 void avfilter_inlineass_set_fonts(AVFilterContext *context)
 {
     AssContext* ass = context->priv;
+    ff_mutex_lock(&ass->lock);
     ass_set_fonts(ass->renderer, ass->font_path, ass->font_name, 1, ass->fc_file, 1);
+    ff_mutex_unlock(&ass->lock);
 }
 
 static int process_header(AVFilterContext *link, AVCodecContext *dec_ctx)
@@ -811,6 +831,7 @@ void avfilter_inlineass_append_data(AVFilterContext *link, AVCodecContext *dec_c
     AssContext *ass = link->priv;
     int i;
 
+    ff_mutex_lock(&ass->lock);
     if (!ass->got_header)
         process_header(link, dec_ctx);
 
@@ -823,6 +844,7 @@ void avfilter_inlineass_append_data(AVFilterContext *link, AVCodecContext *dec_c
             break;
         ass_process_chunk(ass->track, ass_line, strlen(ass_line), start, duration);
     }
+    ff_mutex_unlock(&ass->lock);
 }
 
 #define DEFAULT_OVERRIDES \
