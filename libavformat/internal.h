@@ -172,6 +172,15 @@ typedef struct FFStream {
      */
     int need_context_update;
 
+//PLEX
+    AVRational avg_frame_rate_pre;
+
+    /**
+     * The wallclock timestamp of the most recent read packet (if AVFMT_FLAG_FILL_WALLCLOCK_DTS is set)
+     */
+    int64_t cur_wallclock_time;
+//PLEX
+
     int is_intra_only;
 
     FFFrac priv_pts;
@@ -333,6 +342,7 @@ typedef struct FFStream {
      * Number of frames that have been demuxed during avformat_find_stream_info()
      */
     int codec_info_nb_frames;
+    int codec_info_nb_frames_total; // PLEX
 
     /**
      * Stream Identifier

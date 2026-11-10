@@ -2402,6 +2402,8 @@ void ff_rfps_calculate(AVFormatContext *ic)
     for (unsigned i = 0; i < ic->nb_streams; i++) {
         AVStream *const st  = ic->streams[i];
         FFStream *const sti = ffstream(st);
+        
+        sti->avg_frame_rate_pre = st->avg_frame_rate; //PLEX
 
         if (st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
             continue;
@@ -2953,6 +2955,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             av_packet_unref(pkt1);
 
         sti->codec_info_nb_frames++;
+        sti->codec_info_nb_frames_total++; // PLEX
         count++;
     }
 
@@ -3203,7 +3206,10 @@ find_stream_info_err:
 
         if (sti->info) {
             av_freep(&sti->info->duration_error);
+#if 0
+            // PLEX: do not discard/free info (see 416836c1fc36b15a2)
             av_freep(&sti->info);
+#endif
         }
 
         if (avcodec_is_open(sti->avctx)) {
