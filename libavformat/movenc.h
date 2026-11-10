@@ -251,6 +251,10 @@ typedef struct MOVMuxContext {
     int encryption_key_len;
     uint8_t *encryption_kid;
     int encryption_kid_len;
+    
+//PLEX
+    int video_width, video_height;
+//PLEX
 
     int use_stream_ids_as_track_ids;
     int track_ids_ok;

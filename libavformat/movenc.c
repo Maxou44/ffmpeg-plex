@@ -126,6 +126,9 @@ static const AVOption options[] = {
       { "pts", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = MOV_PRFT_SRC_PTS}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM, .unit = "prft"},
       { "wallclock", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = MOV_PRFT_SRC_WALLCLOCK}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM, .unit = "prft"},
     { "write_tmcd", "force or disable writing tmcd", offsetof(MOVMuxContext, write_tmcd), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, AV_OPT_FLAG_ENCODING_PARAM},
+//PLEX
+    { "mov_res", "Override resolution of video", offsetof(MOVMuxContext, video_width), AV_OPT_TYPE_IMAGE_SIZE, .flags = AV_OPT_FLAG_ENCODING_PARAM },
+//PLEX
     { NULL },
 };
 
@@ -2811,7 +2814,7 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     } else {
         ffio_fill(pb, 0, 3 * 4); /* Reserved */
     }
-    avio_wb16(pb, track->par->width); /* Video width */
+    avio_wb16(pb, mov->video_width ? mov->video_width : track->par->width); /* PLEX: Video width */
     avio_wb16(pb, track->height); /* Video height */
     avio_wb32(pb, 0x00480000); /* Horizontal resolution 72dpi */
     avio_wb32(pb, 0x00480000); /* Vertical resolution 72dpi */
@@ -4026,15 +4029,15 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVMuxContext *mov,
                track->par->codec_type == AVMEDIA_TYPE_SUBTITLE)) {
         int64_t track_width_1616;
         if (track->mode == MODE_MOV || track->mode == MODE_AVIF) {
-            track_width_1616 = track->par->width * 0x10000ULL;
+            track_width_1616 = (mov->video_width ? mov->video_width : track->par->width) * 0x10000ULL;
         } else {
             track_width_1616 = av_rescale(st->sample_aspect_ratio.num,
-                                                  track->par->width * 0x10000LL,
+                                                  (mov->video_width ? mov->video_width : track->par->width) * 0x10000LL,
                                                   st->sample_aspect_ratio.den);
             if (!track_width_1616 ||
                 track->height != track->par->height ||
                 track_width_1616 > UINT32_MAX)
-                track_width_1616 = track->par->width * 0x10000ULL;
+                track_width_1616 = (mov->video_width ? mov->video_width : track->par->width) * 0x10000ULL;
         }
         if (track_width_1616 > UINT32_MAX) {
             av_log(mov->fc, AV_LOG_WARNING, "track width is too large\n");
@@ -8360,7 +8363,7 @@ static int mov_init(AVFormatContext *s)
             track->timescale = mov->movie_timescale;
         }
         if (!track->height)
-            track->height = st->codecpar->height;
+            track->height = mov->video_height ? mov->video_height : st->codecpar->height; /* PLEX */
         /* The Protected Interoperable File Format (PIFF) standard, used by ISMV recommends but
            doesn't mandate a track timescale of 10,000,000. The muxer allows a custom timescale
            for video tracks, so if user-set, it isn't overwritten */
