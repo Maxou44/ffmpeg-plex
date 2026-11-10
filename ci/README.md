@@ -14,8 +14,9 @@ configuration du Plex Transcoder (Plex Media Server 1.43.5.11029,
 | `macos-universal`| `macos-15`             | `lipo` des deux binaires macOS            |
 
 Workflow : `.github/workflows/build-ffmpeg.yml`. Il se déclenche sur chaque push
-de branche, les pull requests et manuellement (`workflow_dispatch`). Un tag
-`v*` publie en plus une release GitHub.
+de branche, les pull requests et manuellement (`workflow_dispatch`). Chaque
+push sur `master` publie en plus une release GitHub `v<version>-<n° de run>`
+(par ex. `v8.1.3-12`) avec les binaires de toutes les plateformes.
 
 ## Fichiers
 
