@@ -327,6 +327,7 @@ External library support:
   --enable-mbedtls         enable mbedTLS, needed for https support
                            if openssl, gnutls or libtls is not used [no]
   --enable-mediacodec      enable Android MediaCodec support [no]
+  --enable-mediacodecndk   enable native Android MediaCodec support [no]
   --enable-mediafoundation enable encoding via MediaFoundation [auto]
   --disable-metal          disable Apple Metal framework [autodetect]
   --enable-libmysofa       enable libmysofa, needed for sofalizer filter [no]
@@ -2116,6 +2117,7 @@ EXTERNAL_LIBRARY_LIST="
     libzvbi
     lv2
     mediacodec
+    mediacodecndk
     ohcodec
     openal
     opengl
@@ -3866,6 +3868,17 @@ wmav2_mf_decoder_deps="mediafoundation"
 wmalossless_mf_decoder_deps="mediafoundation"
 wmapro_mf_decoder_deps="mediafoundation"
 wmavoice_mf_decoder_deps="mediafoundation"
+h264_mediacodecndk_decoder_deps="mediacodecndk"
+h264_mediacodecndk_encoder_deps="mediacodecndk"
+hevc_mediacodecndk_decoder_deps="mediacodecndk"
+mpeg2_mediacodecndk_decoder_deps="mediacodecndk"
+mpeg4_mediacodecndk_decoder_deps="mediacodecndk"
+vc1_mediacodecndk_decoder_deps="mediacodecndk"
+vp8_mediacodecndk_decoder_deps="mediacodecndk"
+vp9_mediacodecndk_decoder_deps="mediacodecndk"
+mp1_mediacodecndk_decoder_deps="mediacodecndk"
+mp2_mediacodecndk_decoder_deps="mediacodecndk"
+mp3_mediacodecndk_decoder_deps="mediacodecndk"
 vapoursynth_demuxer_deps="vapoursynth"
 videotoolbox_suggest="coreservices"
 videotoolbox_deps="corefoundation coremedia corevideo VTDecompressionSessionDecodeFrame"
@@ -7483,6 +7496,7 @@ enabled mbedtls           && { check_pkg_config mbedtls mbedtls mbedtls/x509_crt
                                die "ERROR: mbedTLS not found"; }
 enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; } &&
                                add_compat android/binder.o
+enabled mediacodecndk     && require mediacodecndk "assert.h android/native_window.h media/NdkMediaCodec.h" AMediaCodec_createDecoderByType -lmediandk
 enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
                                { ! enabled cross_compile &&
                                  add_cflags -isystem/opt/vc/include/ -isystem/opt/vc/include/interface/vmcs_host/linux -isystem/opt/vc/include/interface/vcos/pthreads -fgnu89-inline &&

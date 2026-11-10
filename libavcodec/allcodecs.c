@@ -761,6 +761,9 @@ extern const FFCodec ff_xsub_decoder;
 
 /* external libraries */
 //PLEX
+extern const FFCodec ff_mp1_mediacodecndk_decoder;
+extern const FFCodec ff_mp2_mediacodecndk_decoder;
+extern const FFCodec ff_mp3_mediacodecndk_decoder;
 extern const FFCodec ff_eac3_mf_decoder;
 extern const FFCodec ff_wmalossless_mf_decoder;
 extern const FFCodec ff_wmapro_mf_decoder;
@@ -872,6 +875,18 @@ extern const FFCodec ff_amrwb_mediacodec_decoder;
 extern const FFCodec ff_h263_v4l2m2m_encoder;
 extern const FFCodec ff_libaom_av1_decoder;
 /* hwaccel hooks only, so prefer external decoders */
+
+//PLEX
+extern const FFCodec ff_h264_mediacodecndk_encoder;
+extern const FFCodec ff_h264_mediacodecndk_decoder;
+extern const FFCodec ff_hevc_mediacodecndk_decoder;
+extern const FFCodec ff_mpeg2_mediacodecndk_decoder;
+extern const FFCodec ff_mpeg4_mediacodecndk_decoder;
+extern const FFCodec ff_vc1_mediacodecndk_decoder;
+extern const FFCodec ff_vp8_mediacodecndk_decoder;
+extern const FFCodec ff_vp9_mediacodecndk_decoder;
+//PLEX
+
 extern const FFCodec ff_av1_decoder;
 extern const FFCodec ff_av1_cuvid_decoder;
 extern const FFCodec ff_av1_d3d12va_encoder;
