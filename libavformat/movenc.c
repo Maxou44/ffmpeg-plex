@@ -461,11 +461,11 @@ static int mov_write_ac3_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *trac
     return 11;
 }
 
-static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
+static int parse_eac3(MOVMuxContext *mov, const AVPacket *pkt, MOVTrack *track, int *num_blocks)
 {
     AC3HeaderInfo *hdr = NULL;
     struct eac3_info *info;
-    int num_blocks, ret;
+    int ret = 1;
 
     if (!track->eac3_priv) {
         if (!(track->eac3_priv = av_mallocz(sizeof(*info))))
@@ -496,7 +496,8 @@ static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
                                     hdr->ac3_bit_rate_code);
     info->complexity_index_type_a = hdr->complexity_index_type_a;
 
-    num_blocks = hdr->num_blocks;
+    if (num_blocks)
+        *num_blocks = hdr->num_blocks;
 
     if (!info->ec3_done) {
         /* AC-3 substream must be the first one */
@@ -523,7 +524,7 @@ static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
             } else if (hdr->substreamid < info->num_ind_sub ||
                        hdr->substreamid == 0 && info->substream[0].bsid) {
                 info->ec3_done = 1;
-                goto concatenate;
+                goto end;
             }
         } else {
             if (hdr->substreamid != 0) {
@@ -545,7 +546,7 @@ static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
             // so we can finish as soon as the basic values of the bit stream
             // have been set to the track's informational structure.
             info->ec3_done = 1;
-            goto concatenate;
+            goto end;
         }
 
         /* Parse dependent substream(s), if any */
@@ -574,39 +575,48 @@ static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
         }
     }
 
-concatenate:
+end:
+    av_free(hdr);
+
+    return ret;
+}
+
+static int handle_eac3(MOVMuxContext *mov, AVPacket *pkt, MOVTrack *track)
+{
+    int num_blocks;
+    struct eac3_info *info;
+    int ret = parse_eac3(mov, pkt, track, &num_blocks);
+    if (ret <= 0)
+        return ret;
+
+    info = track->eac3_priv;
+
     if (!info->num_blocks && num_blocks == 6) {
-        ret = pkt->size;
-        goto end;
+        return pkt->size;
     }
     else if (info->num_blocks + num_blocks > 6) {
-        ret = AVERROR_INVALIDDATA;
-        goto end;
+        return AVERROR_INVALIDDATA;
     }
 
     if (!info->num_blocks) {
         ret = av_packet_ref(info->pkt, pkt);
         if (!ret)
             info->num_blocks = num_blocks;
-        goto end;
+        return ret;
     } else {
         if ((ret = av_grow_packet(info->pkt, pkt->size)) < 0)
-            goto end;
+            return ret;
         memcpy(info->pkt->data + info->pkt->size - pkt->size, pkt->data, pkt->size);
         info->num_blocks += num_blocks;
         info->pkt->duration += pkt->duration;
         if (info->num_blocks != 6)
-            goto end;
+            return ret;
         av_packet_unref(pkt);
         av_packet_move_ref(pkt, info->pkt);
         info->num_blocks = 0;
     }
-    ret = pkt->size;
 
-end:
-    av_free(hdr);
-
-    return ret;
+    return pkt->size;
 }
 
 static int mov_write_eac3_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
@@ -8806,12 +8816,31 @@ static int mov_check_bitstream(AVFormatContext *s, AVStream *st,
                                const AVPacket *pkt)
 {
     int ret = 1;
+    MOVMuxContext *mov = s->priv_data;
+    MOVTrack *trk = &mov->tracks[pkt->stream_index];
 
     if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
         if (pkt->size > 2 && (AV_RB16(pkt->data) & 0xfff0) == 0xfff0)
             ret = ff_stream_add_bitstream_filter(st, "aac_adtstoasc", NULL);
     } else if (st->codecpar->codec_id == AV_CODEC_ID_VP9) {
         ret = ff_stream_add_bitstream_filter(st, "vp9_superframe", NULL);
+    } else if ((st->codecpar->codec_id == AV_CODEC_ID_DNXHD ||
+                st->codecpar->codec_id == AV_CODEC_ID_AC3) && !trk->extradata_size[0]) {
+        /* copy frame to create needed atoms */
+        trk->extradata[0] = av_malloc(pkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!trk->extradata[0])
+            return AVERROR(ENOMEM);
+        memcpy(trk->extradata[0], pkt->data, pkt->size);
+        memset(trk->extradata[0] + pkt->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+        trk->extradata_size[0] = pkt->size;
+    }
+    if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 || // PLEX
+        st->codecpar->codec_id == AV_CODEC_ID_AC3) {  // PLEX
+        if(!trk->par)
+            trk->par = st->codecpar;
+        ret = parse_eac3(mov, pkt, trk, NULL);
+        if (ret < 0)
+            ret = 0;
     }
 
     return ret;
