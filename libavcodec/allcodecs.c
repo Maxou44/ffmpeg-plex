@@ -879,9 +879,12 @@ extern const FFCodec ff_libaom_av1_decoder;
 //PLEX
 extern const FFCodec ff_h264_mediacodecndk_encoder;
 extern const FFCodec ff_h264_mediacodecndk_decoder;
+extern const FFCodec ff_h264_omx_decoder;
 extern const FFCodec ff_hevc_mediacodecndk_decoder;
+extern const FFCodec ff_hevc_omx_decoder;
 extern const FFCodec ff_mpeg2_mediacodecndk_decoder;
 extern const FFCodec ff_mpeg4_mediacodecndk_decoder;
+extern const FFCodec ff_mpeg4_omx_decoder;
 extern const FFCodec ff_vc1_mediacodecndk_decoder;
 extern const FFCodec ff_vp8_mediacodecndk_decoder;
 extern const FFCodec ff_vp9_mediacodecndk_decoder;

@@ -229,6 +229,8 @@ typedef struct OMXCodecContext {
 
     int input_zerocopy;
     int profile;
+
+    int extra_output_buffers, extra_input_buffers;
 } OMXCodecContext;
 
 #define NB_MUTEX_CONDS 6
@@ -485,6 +487,8 @@ static av_cold int omx_component_init(AVCodecContext *avctx, const char *role)
     else
         in_port_params.format.video.xFramerate = (1LL << 16) * avctx->time_base.den / avctx->time_base.num;
 
+    in_port_params.nBufferCountActual += s->extra_input_buffers;
+
     err = OMX_SetParameter(s->handle, OMX_IndexParamPortDefinition, &in_port_params);
     CHECK(err);
     err = OMX_GetParameter(s->handle, OMX_IndexParamPortDefinition, &in_port_params);
@@ -509,6 +513,8 @@ static av_cold int omx_component_init(AVCodecContext *avctx, const char *role)
         out_port_params.format.video.eCompressionFormat = OMX_VIDEO_CodingMPEG4;
     else if (avctx->codec->id == AV_CODEC_ID_H264)
         out_port_params.format.video.eCompressionFormat = OMX_VIDEO_CodingAVC;
+
+    out_port_params.nBufferCountActual += s->extra_output_buffers;
 
     err = OMX_SetParameter(s->handle, OMX_IndexParamPortDefinition, &out_port_params);
     CHECK(err);
@@ -934,6 +940,8 @@ static const AVOption options[] = {
     { "baseline", "",                         0,               AV_OPT_TYPE_CONST, { .i64 = AV_PROFILE_H264_BASELINE }, 0, 0, VE, .unit = "profile" },
     { "main",     "",                         0,               AV_OPT_TYPE_CONST, { .i64 = AV_PROFILE_H264_MAIN },     0, 0, VE, .unit = "profile" },
     { "high",     "",                         0,               AV_OPT_TYPE_CONST, { .i64 = AV_PROFILE_H264_HIGH },     0, 0, VE, .unit = "profile" },
+    { "extra_input_buffers",  "Number of additional input buffers to request",  OFFSET(extra_input_buffers),  AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 32, VDE },
+    { "extra_output_buffers", "Number of additional output buffers to request", OFFSET(extra_output_buffers), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 32, VDE },
     { NULL }
 };
 
