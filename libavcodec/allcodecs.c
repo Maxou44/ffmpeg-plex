@@ -760,6 +760,12 @@ extern const FFCodec ff_xsub_encoder;
 extern const FFCodec ff_xsub_decoder;
 
 /* external libraries */
+//PLEX
+extern const FFCodec ff_eac3_eae_encoder;
+extern const FFCodec ff_eac3_eae_decoder;
+extern const FFCodec ff_truehd_eae_decoder;
+extern const FFCodec ff_mlp_eae_decoder;
+//PLEX
 extern const FFCodec ff_aac_at_encoder;
 extern const FFCodec ff_aac_at_decoder;
 extern const FFCodec ff_ac3_at_decoder;

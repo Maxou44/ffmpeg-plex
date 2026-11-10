@@ -313,6 +313,35 @@ fallback:
 #define unlink      win32_unlink
 #define access      win32_access
 
+//PLEX
+static inline char *ff_getenv(const char *name)
+{
+    size_t max = 32767; // documented maximum
+    wchar_t *wenv = av_calloc(max + 1, sizeof(wchar_t));
+    wchar_t *wname = NULL;
+    char *env = NULL;
+    (void)utf8towchar(name, &wname);
+    if (!wenv || !wname)
+        goto done;
+    if (!GetEnvironmentVariableW(wname, wenv, max))
+        goto done;
+    (void)wchartoutf8(wenv, &env);
+done:
+    av_free(wenv);
+    av_free(wname);
+    return env;
+}
+#else
+#include <stdlib.h>
+#include "libavutil/mem.h"
+
+static inline char *ff_getenv(const char *name)
+{
+    char *env = getenv(name);
+    return env ? av_strdup(env) : NULL;
+}
+//PLEX
+
 #endif
 
 #endif /* AVFORMAT_OS_SUPPORT_H */

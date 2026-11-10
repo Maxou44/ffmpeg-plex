@@ -82,7 +82,7 @@ static const AVCodec *find_probe_decoder(AVFormatContext *s, const AVStream *st,
 #endif
 
     codec = ff_find_decoder(s, st, codec_id);
-    if (!codec)
+    if (!codec || strstr(codec->name, "_eae"))
         return NULL;
 
     if (codec->capabilities & AV_CODEC_CAP_AVOID_PROBING) {
@@ -95,6 +95,9 @@ static const AVCodec *find_probe_decoder(AVFormatContext *s, const AVStream *st,
                 return probe_codec;
             }
         }
+
+        // Trying a system decoder here will cause more trouble than it solves.
+        return NULL;
     }
 
     return codec;

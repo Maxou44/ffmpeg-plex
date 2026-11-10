@@ -203,6 +203,7 @@ External library support:
   --enable-cairo           enable cairo [no]
   --disable-coreimage      disable Apple CoreImage framework [autodetect]
   --enable-chromaprint     enable audio fingerprinting with chromaprint [no]
+  --disable-eae            disable EAE [yes]
   --enable-frei0r          enable frei0r video filtering [no]
   --enable-gcrypt          enable gcrypt, needed for rtmp(t)e support
                            if openssl, librtmp or gmp is not used [no]
@@ -2030,6 +2031,7 @@ EXTERNAL_LIBRARY_LIST="
     $EXTERNAL_LIBRARY_GPLV3_LIST
     cairo
     chromaprint
+    eae
     gcrypt
     gnutls
     jni
@@ -2212,6 +2214,7 @@ PROGRAM_LIST="
 
 SUBSYSTEM_LIST="
     dwt
+    eae
     error_resilience
     faan
     fast_unaligned
@@ -2719,6 +2722,7 @@ CONFIG_EXTRA="
     dovi_rpudec
     dovi_rpuenc
     dvprofile
+    eae
     evcparse
     faandct
     faanidct
@@ -3753,6 +3757,13 @@ pcm_alaw_at_encoder_select="audio_frame_queue"
 pcm_mulaw_at_encoder_deps="audiotoolbox"
 pcm_mulaw_at_encoder_select="audio_frame_queue"
 chromaprint_muxer_deps="chromaprint"
+eae_select="ac3_parser mlp_parser"
+ac3_eae_decoder_select="eae"
+ac3_eae_encoder_select="eae"
+eac3_eae_decoder_select="eae"
+eac3_eae_encoder_select="eae"
+truehd_eae_decoder_select="eae"
+mlp_eae_decoder_select="eae"
 h264_videotoolbox_encoder_deps="pthreads"
 h264_videotoolbox_encoder_select="atsc_a53 videotoolbox_encoder"
 hevc_videotoolbox_encoder_deps="pthreads"
