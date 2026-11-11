@@ -144,7 +144,9 @@ typedef struct OutputStream {
     /* PLEX: for an audio stream with align_audio_cuts, the presentation times
      * (AV_TIME_BASE) of the video key frames it is still to be cut at. */
     int64_t audio_cuts[32];
+    int audio_cut_indexes[32];  /* with absolute_segments: the segment each cut starts */
     int nb_audio_cuts;
+    int audio_index;            /* with absolute_segments: the audio segment being written */
 } OutputStream;
 
 typedef struct DASHContext {
@@ -212,6 +214,9 @@ typedef struct DASHContext {
     int64_t update_period;
     int align_audio_cuts;    // PLEX
     int64_t video_cut;       // PLEX: the key frame being cut at, AV_TIME_BASE
+    int absolute_segments;   // PLEX
+    int video_cut_index;     // PLEX: the segment the key frame being cut at starts
+    int first_video_index;   // PLEX: the first video segment's number
 } DASHContext;
 
 static int dashenc_io_open(AVFormatContext *s, AVIOContext **pb, char *filename,
@@ -1810,6 +1815,15 @@ static inline void dashenc_delete_media_segments(AVFormatContext *s, OutputStrea
     memmove(os->segments, os->segments + remove_count, os->nb_segments * sizeof(*os->segments));
 }
 
+/* PLEX: with absolute_segments, the number of the segment a frame shown at pts
+ * falls in, on a grid of seg_duration starting at the media's zero: segment n
+ * (numbered from 1) covers [(n - 1) * seg_duration, n * seg_duration). */
+static int absolute_index(int64_t pts, AVRational time_base, int64_t seg_duration)
+{
+    int64_t at = av_rescale_q(pts, time_base, AV_TIME_BASE_Q);
+    return at > 0 ? (int) FFMIN(at / seg_duration + 1, INT_MAX) : 1;
+}
+
 static int dash_flush(AVFormatContext *s, int final, int stream)
 {
     DASHContext *c = s->priv_data;
@@ -1845,10 +1859,11 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         // the video; that distance changes with the encoder and the seek point,
         // so two runs would cut the same audio at different places. Cut it
         // instead at its first packet shown at or after the key frame.
-        if (c->align_audio_cuts && stream >= 0 && i != stream &&
+        if ((c->align_audio_cuts || c->absolute_segments) && stream >= 0 && i != stream &&
             s->streams[stream]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
             st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
             os->nb_audio_cuts < FF_ARRAY_ELEMS(os->audio_cuts)) {
+            os->audio_cut_indexes[os->nb_audio_cuts] = c->video_cut_index;
             os->audio_cuts[os->nb_audio_cuts++] = c->video_cut;
             continue;
         }
@@ -1878,6 +1893,22 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         if (ret < 0)
             break;
         os->packets_written = 0;
+
+        // PLEX: an audio segment starts before its number is known, since the
+        // audio is muxed ahead of the video's first key frame: it takes the
+        // number of the video segment it goes with as it is closed.
+        if (c->absolute_segments && c->has_video &&
+            st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            int index = os->audio_index ? os->audio_index : c->first_video_index;
+            if (index > 0 && index != os->segment_index) {
+                os->segment_index = index;
+                ff_dash_fill_tmpl_params(os->filename, sizeof(os->filename),
+                                         os->media_seg_name, i,
+                                         os->segment_index, os->bit_rate, os->start_pts);
+                snprintf(os->full_path, sizeof(os->full_path), "%s%s",
+                         c->dirname, os->filename);
+            }
+        }
 
         if (c->single_file) {
             find_index_range(s, os->full_path, os->pos, &index_length);
@@ -2059,7 +2090,10 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         as->max_frag_duration = FFMAX(frame_duration, as->max_frag_duration);
     }
 
-    if ((c->use_template && !c->use_timeline) || 1) { //PLEX
+    if (c->absolute_segments) { //PLEX: the media's grid, not the run's
+        elapsed_duration = pkt->pts;
+        seg_end_duration = (int64_t) os->segment_index * os->seg_duration;
+    } else if ((c->use_template && !c->use_timeline) || 1) { //PLEX
         elapsed_duration = pkt->pts - os->first_pts;
         seg_end_duration = (int64_t) (os->segment_index - c->skip_to_segment + 1) * os->seg_duration;
     } else {
@@ -2090,12 +2124,16 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
                              os->audio_cuts[passed], AV_TIME_BASE_Q) >= 0)
             passed++;
         if (passed) {
+            int index = os->audio_cut_indexes[passed - 1];
             os->nb_audio_cuts -= passed;
             memmove(os->audio_cuts, os->audio_cuts + passed,
                     os->nb_audio_cuts * sizeof(*os->audio_cuts));
+            memmove(os->audio_cut_indexes, os->audio_cut_indexes + passed,
+                    os->nb_audio_cuts * sizeof(*os->audio_cut_indexes));
             if (os->packets_written &&
                 (ret = dash_flush(s, 0, pkt->stream_index)) < 0)
                 return ret;
+            os->audio_index = index;
         }
     }
 
@@ -2127,6 +2165,7 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
                         os->producer_reference_time.wallclock);
 
         c->video_cut = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q); //PLEX
+        c->video_cut_index = absolute_index(pkt->pts, st->time_base, os->seg_duration); //PLEX
         if ((ret = dash_flush(s, 0, pkt->stream_index)) < 0)
             return ret;
     }
@@ -2139,6 +2178,13 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
             os->start_pts = os->max_pts;
         else
             os->start_pts = pkt->pts;
+        //PLEX: a video segment is numbered from where its key frame is shown
+        if (c->absolute_segments && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+            pkt->pts != AV_NOPTS_VALUE) {
+            os->segment_index = absolute_index(pkt->pts, st->time_base, os->seg_duration);
+            if (!c->first_video_index)
+                c->first_video_index = os->segment_index;
+        }
     }
     if (os->max_pts == AV_NOPTS_VALUE)
         os->max_pts = pkt->pts + pkt->duration;
@@ -2348,6 +2394,7 @@ static const AVOption options[] = {
     { "skip_to_segment", "first segment number to actually write", OFFSET(skip_to_segment), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, INT_MAX, E },
     { "break_non_keyframes", "allow breaking segments on non-keyframes", OFFSET(break_non_keyframes), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "align_audio_cuts", "cut the audio where the video's key frame is shown, not where it is muxed", OFFSET(align_audio_cuts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "absolute_segments", "cut and number segments on the media's timeline, not from where the output starts; implies align_audio_cuts", OFFSET(absolute_segments), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "delete_removed", "delete segments that are removed from the list", OFFSET(delete_removed), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, E },
 //PLEX
     { "window_size", "number of segments kept in the manifest", OFFSET(window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },

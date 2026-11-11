@@ -31,6 +31,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "mux.h"
+#include "url.h"
 
 #include "libavcodec/packet_internal.h"
 #include "libavutil/avassert.h"
@@ -139,6 +140,10 @@ typedef struct SegmentContext {
     PacketList held;         ///< PLEX: the packets from a held cut's key frame on
     int64_t held_cut;        ///< PLEX: the held key frame's presentation time, AV_TIME_BASE
     int releasing;           ///< PLEX: writing the held key frame, which cuts
+    int absolute;            ///< PLEX
+    int started;             ///< PLEX: the first video packet was written
+    PacketList preroll;      ///< PLEX: what came before it, with absolute
+    int nb_preroll;          ///< PLEX
 } SegmentContext;
 
 static void print_csv_escaped_str(AVIOContext *ctx, const char *str)
@@ -171,6 +176,11 @@ static int segment_mux_init(AVFormatContext *s)
 
     oc->interrupt_callback = s->interrupt_callback;
     oc->max_delay          = s->max_delay;
+    //PLEX: on the media's timeline, a run from the start must not be shifted
+    // where a run from further on is not: decoding times before zero are the
+    // B-frames' delay, not an error to move every timestamp for.
+    if (seg->absolute)
+        oc->avoid_negative_ts = s->avoid_negative_ts;
     av_dict_copy(&oc->metadata, s->metadata, 0);
     oc->opaque             = s->opaque;
     oc->io_close2          = s->io_close2;
@@ -713,6 +723,7 @@ static void seg_free(AVFormatContext *s)
         seg->avf = NULL;
     }
     avpriv_packet_list_free(&seg->held);
+    avpriv_packet_list_free(&seg->preroll);
     av_freep(&seg->times);
     av_freep(&seg->frames);
     av_freep(&seg->cur_entry.filename);
@@ -925,6 +936,15 @@ static int seg_write_header(AVFormatContext *s)
     return 0;
 }
 
+/* PLEX: with segment_absolute, the number of the segment a key frame shown at
+ * pts (AV_TIME_BASE) starts, on a grid of segment_time from the media's zero,
+ * by the same rule as the cut it makes. */
+static int absolute_index(SegmentContext *seg, int64_t pts)
+{
+    int64_t at = pts + seg->time_delta;
+    return at > 0 && seg->time > 0 ? (int) FFMIN(at / seg->time, INT_MAX) : 0;
+}
+
 static int write_segment_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SegmentContext *seg = s->priv_data;
@@ -969,6 +989,8 @@ calc_times:
             if (wrapped_val < seg->last_val && wrapped_val < seg->clocktime_wrap_duration)
                 seg->cut_pending = 1;
             seg->last_val = wrapped_val;
+        } else if (seg->absolute) { //PLEX: the media's grid, not the output's
+            end_pts = seg->time * (seg->segment_idx + 1);
         } else {
             end_pts = seg->time * (seg->segment_count + 1);
         }
@@ -1000,7 +1022,7 @@ calc_times:
         seg->reference_stream_first_pts = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
     }
 
-    if (seg->reference_stream_first_pts != AV_NOPTS_VALUE) {
+    if (seg->reference_stream_first_pts != AV_NOPTS_VALUE && !seg->absolute) { //PLEX
         end_pts += (INT64_MAX - end_pts >= seg->reference_stream_first_pts) ?
                     seg->reference_stream_first_pts :
                     INT64_MAX - end_pts;
@@ -1018,7 +1040,7 @@ calc_times:
           av_compare_ts(pkt->pts, st->time_base,
                         end_pts - seg->time_delta, AV_TIME_BASE_Q) >= 0))) {
         //PLEX: wait for the audio to reach the key frame, see seg_write_packet()
-        if (seg->align_audio_cuts && seg->has_audio && !seg->releasing &&
+        if ((seg->align_audio_cuts || seg->absolute) && seg->has_audio && !seg->releasing &&
             pkt->pts != AV_NOPTS_VALUE) {
             seg->held_cut = pkt_pts_avtb;
             return avpriv_packet_list_put(&seg->held, pkt, av_packet_ref, 0);
@@ -1030,6 +1052,10 @@ calc_times:
 
         if ((ret = segment_end(s, seg->individual_header_trailer, 0)) < 0)
             goto fail;
+
+        //PLEX: numbered from where its key frame is shown; segment_start counts one on
+        if (seg->absolute)
+            seg->segment_idx = absolute_index(seg, pkt_pts_avtb) - 1;
 
         if ((ret = segment_start(s, seg->individual_header_trailer)) < 0)
             goto fail;
@@ -1155,12 +1181,92 @@ static int release_cut(AVFormatContext *s)
  * encoder and the seek point: two runs would cut the same audio at different
  * places. Until the audio gets there, it still goes to the segment being ended
  * and every other packet is held. */
+/* With segment_absolute, the first file was opened before any packet, under the
+ * number the output starts at, and its first key frame may fall in another
+ * segment. It holds nothing yet: open it again under the right number. */
+static int renumber_first_segment(AVFormatContext *s, int index)
+{
+    SegmentContext *seg = s->priv_data;
+    AVFormatContext *oc = seg->avf;
+    int ret;
+
+    if (index == seg->segment_idx)
+        return 0;
+    ff_format_io_close(oc, &oc->pb);
+    ffurl_delete(oc->url);
+    seg->segment_idx = index;
+    if ((ret = set_segment_filename(s)) < 0)
+        return ret;
+    if ((ret = s->io_open(s, &oc->pb, oc->url, AVIO_FLAG_WRITE, NULL)) < 0) {
+        av_log(s, AV_LOG_ERROR, "Failed to open segment '%s'\n", oc->url);
+        return ret;
+    }
+    if (!seg->individual_header_trailer)
+        oc->pb->seekable = 0;
+    if (oc->oformat->priv_class && oc->priv_data)
+        av_opt_set(oc->priv_data, "mpegts_flags", "+resend_headers", 0);
+    return 0;
+}
+
+/* How many packets may come before the first video packet, an output without
+ * one included, before they are written anyway. */
+#define MAX_PREROLL 10000
+
+/* Writes what came before the first video packet, whose time the first file's
+ * number waited for. */
+static int write_preroll(AVFormatContext *s)
+{
+    SegmentContext *seg = s->priv_data;
+    PacketList preroll = seg->preroll;
+    AVPacket *held = av_packet_alloc();
+    int ret = 0;
+
+    seg->started = 1;
+    seg->preroll = (PacketList){ 0 };
+    if (!held) {
+        avpriv_packet_list_free(&preroll);
+        return AVERROR(ENOMEM);
+    }
+    while (ret >= 0 && avpriv_packet_list_get(&preroll, held) >= 0) {
+        ret = seg_write_packet(s, held);
+        av_packet_unref(held);
+    }
+    avpriv_packet_list_free(&preroll);
+    av_packet_free(&held);
+    return ret;
+}
+
+/* With segment_absolute, what comes before the first video packet waits for
+ * it: the audio is muxed ahead of the video's first key frame. */
+static int start_absolute(AVFormatContext *s, AVPacket *pkt)
+{
+    SegmentContext *seg = s->priv_data;
+    AVStream *st = s->streams[pkt->stream_index];
+    int reference = pkt->stream_index == seg->reference_stream_index &&
+                    pkt->pts != AV_NOPTS_VALUE;
+    int ret;
+
+    if (!reference && seg->nb_preroll < MAX_PREROLL) {
+        seg->nb_preroll++;
+        return avpriv_packet_list_put(&seg->preroll, pkt, av_packet_ref, 0);
+    }
+    if (reference &&
+        (ret = renumber_first_segment(s, absolute_index(seg,
+                 av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q)))) < 0)
+        return ret;
+    if ((ret = write_preroll(s)) < 0)
+        return ret;
+    return seg_write_packet(s, pkt);
+}
+
 static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SegmentContext *seg = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
     int ret;
 
+    if (seg->absolute && !seg->started)
+        return start_absolute(s, pkt);
     if (!seg->held.head)
         return write_segment_packet(s, pkt);
     if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
@@ -1186,6 +1292,8 @@ static int seg_write_trailer(struct AVFormatContext *s)
 
     if (!oc)
         return 0;
+    if (seg->absolute && !seg->started && (ret = write_preroll(s)) < 0) //PLEX
+        return ret;
     if (seg->held.head && (ret = release_cut(s)) < 0) //PLEX
         return ret;
 
@@ -1269,6 +1377,7 @@ static const AVOption options[] = {
     { "segment_list_separate_stream_times", "adds additional fields in segment list for separate audio and video end times",   OFFSET(list_separate_times),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
     { "segment_list_unfinished", "lists unfinished segments with a leading #",   OFFSET(list_unfinished),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
     { "segment_align_audio_cuts", "cut the audio where the video's key frame is shown, not where it is muxed", OFFSET(align_audio_cuts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E},
+    { "segment_absolute", "cut and number segments on the media's timeline, not from where the output starts; implies segment_align_audio_cuts", OFFSET(absolute), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E},
 //PLEX
     { NULL },
 };
