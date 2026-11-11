@@ -141,6 +141,10 @@ typedef struct OutputStream {
     int64_t gop_size;
     AVRational sar;
     int coding_dependency;
+    /* PLEX: for an audio stream with align_audio_cuts, the presentation times
+     * (AV_TIME_BASE) of the video key frames it is still to be cut at. */
+    int64_t audio_cuts[32];
+    int nb_audio_cuts;
 } OutputStream;
 
 typedef struct DASHContext {
@@ -206,6 +210,8 @@ typedef struct DASHContext {
     AVRational min_playback_rate;
     AVRational max_playback_rate;
     int64_t update_period;
+    int align_audio_cuts;    // PLEX
+    int64_t video_cut;       // PLEX: the key frame being cut at, AV_TIME_BASE
 } DASHContext;
 
 static int dashenc_io_open(AVFormatContext *s, AVIOContext **pb, char *filename,
@@ -1834,6 +1840,19 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         int range_length, index_length = 0;
         int64_t duration;
 
+        // PLEX: when the video is cut, the audio muxed so far stops some way
+        // before the key frame, by however far the interleaving runs it behind
+        // the video; that distance changes with the encoder and the seek point,
+        // so two runs would cut the same audio at different places. Cut it
+        // instead at its first packet shown at or after the key frame.
+        if (c->align_audio_cuts && stream >= 0 && i != stream &&
+            s->streams[stream]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+            st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
+            os->nb_audio_cuts < FF_ARRAY_ELEMS(os->audio_cuts)) {
+            os->audio_cuts[os->nb_audio_cuts++] = c->video_cut;
+            continue;
+        }
+
         if (!os->packets_written)
             continue;
 
@@ -1923,6 +1942,10 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         }
     }
     if (ret >= 0) {
+        // PLEX: an audio cut caught up with: the manifest follows the video's.
+        if (c->has_video && !final && stream >= 0 &&
+            s->streams[stream]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
+            return ret;
         if (c->has_video && !final) {
             c->nr_of_streams_flushed++;
             if (c->nr_of_streams_flushed != c->nr_of_streams_to_flush)
@@ -2057,6 +2080,25 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         os->coding_dependency |= os->parser->pict_type != AV_PICTURE_TYPE_I;
     }
 
+    //PLEX: an audio packet shown at or after a key frame the video was cut at
+    // ends the audio segment before it. Several cuts passed at once, between
+    // key frames closer than an audio packet, make one segment.
+    if (os->nb_audio_cuts && pkt->pts != AV_NOPTS_VALUE) {
+        int passed = 0;
+        while (passed < os->nb_audio_cuts &&
+               av_compare_ts(pkt->pts, st->time_base,
+                             os->audio_cuts[passed], AV_TIME_BASE_Q) >= 0)
+            passed++;
+        if (passed) {
+            os->nb_audio_cuts -= passed;
+            memmove(os->audio_cuts, os->audio_cuts + passed,
+                    os->nb_audio_cuts * sizeof(*os->audio_cuts));
+            if (os->packets_written &&
+                (ret = dash_flush(s, 0, pkt->stream_index)) < 0)
+                return ret;
+        }
+    }
+
     if (((pkt->flags & AV_PKT_FLAG_KEY) || c->break_non_keyframes) && os->packets_written && //PLEX
         (!c->has_video || st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && //PLEX
         av_compare_ts(elapsed_duration, st->time_base,
@@ -2084,6 +2126,7 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
                         sizeof(os->producer_reference_time_str),
                         os->producer_reference_time.wallclock);
 
+        c->video_cut = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q); //PLEX
         if ((ret = dash_flush(s, 0, pkt->stream_index)) < 0)
             return ret;
     }
@@ -2304,6 +2347,7 @@ static const AVOption options[] = {
     { "manifest_name", "Location to write the manifest (does not affect segments)", OFFSET(manifest_file_name), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, E },
     { "skip_to_segment", "first segment number to actually write", OFFSET(skip_to_segment), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, INT_MAX, E },
     { "break_non_keyframes", "allow breaking segments on non-keyframes", OFFSET(break_non_keyframes), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
+    { "align_audio_cuts", "cut the audio where the video's key frame is shown, not where it is muxed", OFFSET(align_audio_cuts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E },
     { "delete_removed", "delete segments that are removed from the list", OFFSET(delete_removed), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, E },
 //PLEX
     { "window_size", "number of segments kept in the manifest", OFFSET(window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },

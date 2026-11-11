@@ -32,6 +32,7 @@
 #include "internal.h"
 #include "mux.h"
 
+#include "libavcodec/packet_internal.h"
 #include "libavutil/avassert.h"
 #include "libavutil/internal.h"
 #include "libavutil/log.h"
@@ -133,6 +134,11 @@ typedef struct SegmentContext {
     int list_separate_times;    ///< PLEX
     int list_unfinished;     ///< PLEX
     int cur_list_size; ///< PLEX
+    int align_audio_cuts;    ///< PLEX
+    int has_audio;           ///< PLEX: an audio stream beside a video reference stream
+    PacketList held;         ///< PLEX: the packets from a held cut's key frame on
+    int64_t held_cut;        ///< PLEX: the held key frame's presentation time, AV_TIME_BASE
+    int releasing;           ///< PLEX: writing the held key frame, which cuts
 } SegmentContext;
 
 static void print_csv_escaped_str(AVIOContext *ctx, const char *str)
@@ -706,6 +712,7 @@ static void seg_free(AVFormatContext *s)
         avformat_free_context(seg->avf);
         seg->avf = NULL;
     }
+    avpriv_packet_list_free(&seg->held);
     av_freep(&seg->times);
     av_freep(&seg->frames);
     av_freep(&seg->cur_entry.filename);
@@ -794,6 +801,11 @@ static int seg_init(AVFormatContext *s)
 
     if ((ret = select_reference_stream(s)) < 0)
         return ret;
+    //PLEX
+    if (s->streams[seg->reference_stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        for (i = 0; i < s->nb_streams; i++)
+            if (s->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                seg->has_audio = 1;
     av_log(s, AV_LOG_VERBOSE, "Selected stream id:%d type:%s\n",
            seg->reference_stream_index,
            av_get_media_type_string(s->streams[seg->reference_stream_index]->codecpar->codec_type));
@@ -913,7 +925,7 @@ static int seg_write_header(AVFormatContext *s)
     return 0;
 }
 
-static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
+static int write_segment_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SegmentContext *seg = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
@@ -1005,6 +1017,13 @@ calc_times:
           pkt_pts_avtb - seg->cur_entry.start_pts >= seg->min_seg_duration &&
           av_compare_ts(pkt->pts, st->time_base,
                         end_pts - seg->time_delta, AV_TIME_BASE_Q) >= 0))) {
+        //PLEX: wait for the audio to reach the key frame, see seg_write_packet()
+        if (seg->align_audio_cuts && seg->has_audio && !seg->releasing &&
+            pkt->pts != AV_NOPTS_VALUE) {
+            seg->held_cut = pkt_pts_avtb;
+            return avpriv_packet_list_put(&seg->held, pkt, av_packet_ref, 0);
+        }
+
         /* sanitize end time in case last packet didn't have a defined duration */
         if (seg->cur_entry.last_duration == 0)
             seg->cur_entry.end_time = (double)pkt->pts * av_q2d(st->time_base);
@@ -1092,6 +1111,73 @@ fail:
     return ret;
 }
 
+//PLEX
+/* How long the video may wait for the audio at a cut before it is made anyway:
+ * an audio stream that has ended or pauses must not hold the video back. */
+#define MAX_HELD_CUT (10 * AV_TIME_BASE)
+
+static int seg_write_packet(AVFormatContext *s, AVPacket *pkt);
+
+/* Makes the held cut: the key frame that starts the next segment first, then
+ * the packets held after it, which may hold a further cut. */
+static int release_cut(AVFormatContext *s)
+{
+    SegmentContext *seg = s->priv_data;
+    PacketList held = seg->held;
+    AVPacket *pkt = av_packet_alloc();
+    int ret = 0, first = 1;
+
+    seg->held = (PacketList){ 0 };
+    if (!pkt) {
+        avpriv_packet_list_free(&held);
+        return AVERROR(ENOMEM);
+    }
+    while (ret >= 0 && avpriv_packet_list_get(&held, pkt) >= 0) {
+        if (first) {
+            seg->releasing = 1;
+            ret = write_segment_packet(s, pkt);
+            seg->releasing = 0;
+            first = 0;
+        } else {
+            ret = seg_write_packet(s, pkt);
+        }
+        av_packet_unref(pkt);
+    }
+    avpriv_packet_list_free(&held);
+    av_packet_free(&pkt);
+    return ret;
+}
+
+/* With align_audio_cuts, a cut at a video key frame waits for the audio to
+ * reach the frame's presentation time. The interleaving runs the audio some
+ * way behind the video, so cutting on arrival puts the audio shown just before
+ * the key frame in the next segment, by a distance that changes with the
+ * encoder and the seek point: two runs would cut the same audio at different
+ * places. Until the audio gets there, it still goes to the segment being ended
+ * and every other packet is held. */
+static int seg_write_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    SegmentContext *seg = s->priv_data;
+    AVStream *st = s->streams[pkt->stream_index];
+    int ret;
+
+    if (!seg->held.head)
+        return write_segment_packet(s, pkt);
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+        if (pkt->pts == AV_NOPTS_VALUE ||
+            av_compare_ts(pkt->pts, st->time_base, seg->held_cut, AV_TIME_BASE_Q) < 0)
+            return write_segment_packet(s, pkt);
+    } else if (pkt->pts == AV_NOPTS_VALUE ||
+               av_compare_ts(pkt->pts, st->time_base,
+                             seg->held_cut + MAX_HELD_CUT, AV_TIME_BASE_Q) < 0) {
+        return avpriv_packet_list_put(&seg->held, pkt, av_packet_ref, 0);
+    }
+    if ((ret = release_cut(s)) < 0)
+        return ret;
+    return seg_write_packet(s, pkt);
+}
+//PLEX
+
 static int seg_write_trailer(struct AVFormatContext *s)
 {
     SegmentContext *seg = s->priv_data;
@@ -1100,6 +1186,8 @@ static int seg_write_trailer(struct AVFormatContext *s)
 
     if (!oc)
         return 0;
+    if (seg->held.head && (ret = release_cut(s)) < 0) //PLEX
+        return ret;
 
     if (!seg->write_header_trailer) {
         if ((ret = segment_end(s, 0, 1)) < 0)
@@ -1180,6 +1268,7 @@ static const AVOption options[] = {
 //PLEX
     { "segment_list_separate_stream_times", "adds additional fields in segment list for separate audio and video end times",   OFFSET(list_separate_times),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
     { "segment_list_unfinished", "lists unfinished segments with a leading #",   OFFSET(list_unfinished),    AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, E},
+    { "segment_align_audio_cuts", "cut the audio where the video's key frame is shown, not where it is muxed", OFFSET(align_audio_cuts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, E},
 //PLEX
     { NULL },
 };
