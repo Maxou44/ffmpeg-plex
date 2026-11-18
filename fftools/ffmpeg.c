@@ -1000,6 +1000,7 @@ int main(int argc, char **argv)
     /* `ffmpeg -probe ARGS` is `ffprobe ARGS`: one binary for both tools */
     if (argc > 1 && !strcmp(argv[1], "-probe")) {
         ffprobe_builtin_running = 1;
+        leading_arguments = 1;
         argv[1] = argv[0];
         return ffprobe_main(argc - 1, argv + 1);
     }

@@ -164,6 +164,8 @@ static const OptionDef *find_option(const OptionDef *po, const char *name)
     return po;
 }
 
+int leading_arguments;
+
 /* _WIN32 means using the windows libc - cygwin doesn't define that
  * by default. HAVE_COMMANDLINETOARGVW is true on cygwin, while
  * it doesn't provide the actual command line via GetCommandLineW(). */
@@ -217,6 +219,13 @@ static void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
     }
     win32_argv_utf8[i] = NULL;
     LocalFree(argv_w);
+
+    /* drop what main() consumed, keeping the program name */
+    if (leading_arguments > 0 && leading_arguments < win32_argc) {
+        win32_argc -= leading_arguments;
+        for (i = 1; i <= win32_argc; i++)
+            win32_argv_utf8[i] = win32_argv_utf8[i + leading_arguments];
+    }
 
     *argc_ptr = win32_argc;
     *argv_ptr = win32_argv_utf8;

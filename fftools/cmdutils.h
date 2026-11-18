@@ -50,6 +50,13 @@ extern AVDictionary *format_opts, *codec_opts;
 extern int hide_banner;
 
 /**
+ * Arguments at the head of the command line that main() consumed before the
+ * program's own: 1 for ffprobe run as `ffmpeg -probe`. Windows reads the
+ * command line again for UTF-8 arguments and must skip them too.
+ */
+extern int leading_arguments;
+
+/**
  * Initialize dynamic library loading
  */
 void init_dynload(void);

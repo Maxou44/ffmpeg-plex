@@ -26,9 +26,14 @@
 /* as in ffprobe_builtin.h, whose other declaration cmdutils.h repeats below */
 int ffprobe_main(int argc, char **argv);
 
-#define main               ffprobe_main
 #define program_name       ffprobe_program_name
 #define program_birth_year ffprobe_program_birth_year
 #define show_help_default  ffprobe_show_help_default
+
+/* cmdutils.h undefines main on Windows, against SDL's: read it before renaming main */
+#include "config.h"
+#include "cmdutils.h"
+
+#define main               ffprobe_main
 
 #include "ffprobe.c"
