@@ -86,6 +86,7 @@
 #include "ffmpeg_utils.h"
 
 #include "plex.h" // PLEX
+#include "ffprobe_builtin.h"
 #include "graph/graphprint.h"
 
 const char program_name[] = "ffmpeg";
@@ -987,12 +988,21 @@ static int64_t getmaxrss(void)
 #endif
 }
 
+int ffprobe_builtin_running;
+
 int main(int argc, char **argv)
 {
     Scheduler *sch = NULL;
 
     int ret;
     BenchmarkTimeStamps ti;
+
+    /* `ffmpeg -probe ARGS` is `ffprobe ARGS`: one binary for both tools */
+    if (argc > 1 && !strcmp(argv[1], "-probe")) {
+        ffprobe_builtin_running = 1;
+        argv[1] = argv[0];
+        return ffprobe_main(argc - 1, argv + 1);
+    }
 
     init_dynload();
 

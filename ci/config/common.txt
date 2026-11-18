@@ -26,6 +26,7 @@
 --disable-decoders
 --disable-devices
 --disable-encoders
+# ffprobe is built into ffmpeg instead, as `ffmpeg -probe` (fftools/ffprobe_builtin.c)
 --disable-ffprobe
 --disable-ffplay
 --disable-doc

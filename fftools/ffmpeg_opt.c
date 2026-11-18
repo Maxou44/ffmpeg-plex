@@ -27,6 +27,7 @@
 #include <sys/resource.h>
 #endif
 
+#include "ffprobe_builtin.h"
 #include "ffmpeg.h"
 #include "plex.h" // PLEX
 #include "ffmpeg_sched.h"
@@ -1314,6 +1315,11 @@ static int opt_filter_complex_script(void *optctx, const char *opt, const char *
 void show_help_default(const char *opt, const char *arg)
 {
     int show_advanced = 0, show_avoptions = 0;
+
+    if (ffprobe_builtin_running) {
+        ffprobe_show_help_default(opt, arg);
+        return;
+    }
 
     if (opt && *opt) {
         if (!strcmp(opt, "long"))

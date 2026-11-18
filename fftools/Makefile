@@ -21,6 +21,7 @@ OBJS-ffmpeg +=                  \
     fftools/ffmpeg_mux_init.o   \
     fftools/ffmpeg_opt.o        \
     fftools/ffmpeg_sched.o      \
+    fftools/ffprobe_builtin.o   \
     fftools/plex.o              \
     fftools/graph/graphprint.o        \
     fftools/sync_queue.o        \
@@ -72,7 +73,7 @@ $(foreach P,$(AVPROGS-yes),$(eval $(call DOFFTOOL,$(P))))
 
 all: $(AVPROGS)
 
-fftools/ffprobe.o fftools/cmdutils.o: libavutil/ffversion.h | fftools
+fftools/ffprobe.o fftools/ffprobe_builtin.o fftools/cmdutils.o: libavutil/ffversion.h | fftools
 OUTDIRS += fftools
 OUTDIRS += fftools/textformat
 OUTDIRS += fftools/resources

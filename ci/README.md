@@ -49,6 +49,9 @@ push sur `master` publie en plus une release GitHub `v<version>-<n° de run>`
 - Le binaire publié est strippé ; la version avec symboles est dans
   l'artefact `*-debug` (Plex utilise `--strip=true`).
 - `ayuv` : décodeur retiré de FFmpeg en 7.0.
+- ffprobe est intégré au binaire `ffmpeg` : `ffmpeg -probe [options ffprobe]`
+  (en premier argument) se comporte comme `ffprobe`, d'où `--disable-ffprobe`
+  conservé. Plex n'embarque pas de ffprobe.
 
 ## Build local
 
